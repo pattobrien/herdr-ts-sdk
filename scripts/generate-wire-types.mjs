@@ -4,6 +4,8 @@ import * as NodeRuntime from "@effect/platform-node-shared/NodeRuntime";
 import { resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { compile } from "json-schema-to-typescript";
+import { Ajv2020 } from "ajv/dist/2020.js";
+import standaloneCode from "ajv/dist/standalone/index.js";
 
 const WireGenerationError = Schema.TaggedStruct("WireGenerationError", { message: Schema.String });
 const schemaObject = Schema.Record(Schema.String, Schema.MutableJson);
@@ -37,6 +39,21 @@ const parseWireSourceDocument = Schema.decodeEffect(
   Schema.fromJsonString(Schema.Struct({ schemas: Schema.Record(Schema.String, schemaObject) })),
 );
 const parseWireDocument = Schema.decodeUnknownEffect(wireDocumentSchema);
+const parseWireSchemaJson = Schema.decodeEffect(Schema.fromJsonString(schemaObject));
+
+const wireSchemaId = "https://herdr.dev/herdr-api.schema.json";
+/** @type {ReadonlyArray<readonly [string, string, string, string]>} */
+const wireValidatorTargets = [
+  ["parseSuccessResponse", "success_response", "SuccessResponse", "./wire-success-response.ts"],
+  ["parseErrorResponse", "error_response", "ErrorResponse", "./wire-error-response.ts"],
+  ["parseLifecycleEvent", "event", "EventEnvelope", "./wire-event.ts"],
+  [
+    "parseSubscriptionEvent",
+    "subscription_event",
+    "SubscriptionEventEnvelope",
+    "./wire-subscription-event.ts",
+  ],
+];
 
 const generateWireTypes = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
@@ -59,9 +76,8 @@ const generateWireTypes = Effect.gen(function* () {
     outputDirectory === undefined
       ? new URL("../src/generated/", import.meta.url)
       : pathToFileURL(resolve(outputDirectory) + sep);
-  const sourceDocument = yield* parseWireSourceDocument(
-    yield* fs.readFileString(fileURLToPath(schemaPath)),
-  );
+  const schemaSource = yield* fs.readFileString(fileURLToPath(schemaPath));
+  const sourceDocument = yield* parseWireSourceDocument(schemaSource);
   const document = yield* parseWireDocument(sourceDocument);
 
   const resultMethods = {
@@ -225,6 +241,45 @@ const generateWireTypes = Effect.gen(function* () {
   yield* fs.writeFileString(
     fileURLToPath(new URL("wire-method-map.ts", generatedDirectory)),
     mapSource,
+  );
+
+  const validatorAjv = new Ajv2020({
+    allErrors: true,
+    strict: false,
+    validateFormats: false,
+    code: { source: true, esm: true },
+  });
+  validatorAjv.addSchema({ ...(yield* parseWireSchemaJson(schemaSource)), $id: wireSchemaId });
+  for (const [, schemaName] of wireValidatorTargets)
+    validatorAjv.addSchema({ $ref: `${wireSchemaId}#/schemas/${schemaName}` }, schemaName);
+  const validatorSource = standaloneCode.default(
+    validatorAjv,
+    Object.fromEntries(
+      wireValidatorTargets.map(([exportName, schemaName]) => [exportName, schemaName]),
+    ),
+  );
+  const validatorBanner =
+    "/** Generated from schema/herdr-api.schema.json by ajv standalone; do not edit. */";
+  yield* fs.writeFileString(
+    fileURLToPath(new URL("wire-validators.mjs", generatedDirectory)),
+    `${validatorBanner}\n${validatorSource}\n`,
+  );
+  const validatorDeclarations = [
+    validatorBanner,
+    `import type { ValidateFunction } from "ajv";`,
+    ...wireValidatorTargets.map(
+      ([, , typeName, typeModule]) => `import type { ${typeName} } from "${typeModule}";`,
+    ),
+    "",
+    ...wireValidatorTargets.map(
+      ([exportName, , typeName]) =>
+        `export declare const ${exportName}: ValidateFunction<${typeName}>;`,
+    ),
+    "",
+  ].join("\n");
+  yield* fs.writeFileString(
+    fileURLToPath(new URL("wire-validators.d.mts", generatedDirectory)),
+    validatorDeclarations,
   );
 });
 

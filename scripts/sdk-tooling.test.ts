@@ -145,6 +145,8 @@ describe("wire generation", () => {
             "wire-request.ts",
             "wire-subscription-event.ts",
             "wire-success-response.ts",
+            "wire-validators.d.mts",
+            "wire-validators.mjs",
           ]);
           const first = yield* Effect.forEach(files, (file) =>
             fs.readFileString(join(generatedDirectory, file)),

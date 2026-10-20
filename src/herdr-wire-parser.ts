@@ -5,8 +5,7 @@
  *
  * @since 0.8.2
  */
-import { Ajv2020, type ErrorObject } from "ajv/dist/2020.js";
-import herdrApiSchema from "../schema/herdr-api.schema.json" with { type: "json" };
+import type { ErrorObject } from "ajv/dist/2020.js";
 import type { ErrorResponse } from "./generated/wire-error-response.ts";
 import type { EventEnvelope } from "./generated/wire-event.ts";
 import type { SubscriptionEventEnvelope } from "./generated/wire-subscription-event.ts";
@@ -16,6 +15,12 @@ import {
   type WireMethod,
   type WireMethodMap,
 } from "./generated/wire-method-map.ts";
+import {
+  parseErrorResponse,
+  parseLifecycleEvent,
+  parseSubscriptionEvent,
+  parseSuccessResponse,
+} from "./generated/wire-validators.mjs";
 
 /** Narrows a schema-validated result using the exhaustively generated method contract. @category decoding @since 0.9.0 */
 export function isExpectedWireResult<Method extends WireMethod>(
@@ -25,22 +30,6 @@ export function isExpectedWireResult<Method extends WireMethod>(
   const acceptedTypes: readonly string[] = wireResultTypesByMethod[method];
   return acceptedTypes.includes(result.type);
 }
-
-const SCHEMA_ID = "https://herdr.dev/herdr-api.schema.json";
-const ajv = new Ajv2020({ allErrors: true, strict: false, validateFormats: false });
-ajv.addSchema({ ...herdrApiSchema, $id: SCHEMA_ID });
-const parseSuccessResponse = ajv.compile<SuccessResponse>({
-  $ref: `${SCHEMA_ID}#/schemas/success_response`,
-});
-const parseErrorResponse = ajv.compile<ErrorResponse>({
-  $ref: `${SCHEMA_ID}#/schemas/error_response`,
-});
-const parseLifecycleEvent = ajv.compile<EventEnvelope>({
-  $ref: `${SCHEMA_ID}#/schemas/event`,
-});
-const parseSubscriptionEvent = ajv.compile<SubscriptionEventEnvelope>({
-  $ref: `${SCHEMA_ID}#/schemas/subscription_event`,
-});
 
 /**
  * Parses an untrusted wire response into the generated success or error contract.
@@ -81,6 +70,9 @@ function invalidWireValue(
   requestId: string,
   errors: readonly ErrorObject[],
 ): Error {
-  const detail = ajv.errorsText(errors.slice(0, 5), { separator: "; " });
+  const detail = errors
+    .slice(0, 5)
+    .map((error) => `data${error.instancePath} ${error.message}`)
+    .join("; ");
   return new Error(`Herdr wire ${kind} failed schema parsing for request ${requestId}: ${detail}`);
 }
