@@ -1,8 +1,9 @@
-import { Ajv2020 } from "ajv/dist/2020.js";
+import { Result, SchemaParser } from "effect";
 import herdrApiSchema from "../schema/herdr-api.schema.json" with { type: "json" };
 import { wireResultTypesByMethod } from "./generated/wire-method-map.ts";
 import type { SuccessResponse } from "./generated/wire-success-response.ts";
 import type { HerdrTestRequest } from "./herdr-test-server.ts";
+import { formatHerdrWireIssue, importHerdrWireSchema } from "./herdr-wire-parser.ts";
 
 interface JsonSchemaProperties {
   readonly [key: string]: JsonSchema | undefined;
@@ -30,12 +31,9 @@ interface FixtureJsonObject {
 
 type FixtureJsonValue = string | number | boolean | null | FixtureJsonValue[] | FixtureJsonObject;
 
-const schemaId = "https://herdr.dev/herdr-api.schema.json";
-const ajv = new Ajv2020({ allErrors: true, strict: false, validateFormats: false });
-ajv.addSchema({ ...herdrApiSchema, $id: schemaId });
-const successResponseParser = ajv.compile<SuccessResponse>({
-  $ref: schemaId + "#/schemas/success_response",
-});
+const decodeSuccessResponse = SchemaParser.decodeUnknownResult(
+  importHerdrWireSchema<SuccessResponse>("success_response"),
+);
 
 const successDefinitions = new Map<string, JsonSchema>(
   Object.entries(herdrApiSchema.schemas.success_response.$defs),
@@ -72,12 +70,10 @@ export function makeHerdrSuccessResponse(request: HerdrTestRequest): SuccessResp
     id: request.id,
     result: synthesizeJsonSchema(resultSchema, "result"),
   };
-  if (successResponseParser(candidate)) return candidate;
+  const decoded = decodeSuccessResponse(candidate);
+  if (Result.isSuccess(decoded)) return decoded.success;
   throw new Error(
-    "Generated " +
-      resultType +
-      " fixture is invalid: " +
-      ajv.errorsText(successResponseParser.errors),
+    "Generated " + resultType + " fixture is invalid: " + formatHerdrWireIssue(decoded.failure),
   );
 }
 

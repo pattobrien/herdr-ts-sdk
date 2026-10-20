@@ -2,44 +2,26 @@ import { NodeFileSystem } from "@effect/platform-node-shared";
 import { Cause, Deferred, Effect, Exit, Fiber, FileSystem, Schema, Scope } from "effect";
 import { createServer, type Socket } from "node:net";
 import { join } from "node:path";
-import { Ajv2020 } from "ajv/dist/2020.js";
-import herdrApiSchema from "../schema/herdr-api.schema.json" with { type: "json" };
 import type { ErrorResponse } from "./generated/wire-error-response.ts";
 import type { Request } from "./generated/wire-request.ts";
 import type { SuccessResponse } from "./generated/wire-success-response.ts";
 import { resolveHerdrSocketEndpoint } from "./herdr-node.ts";
+import { importHerdrWireSchema } from "./herdr-wire-parser.ts";
 
-const schemaId = "https://herdr.dev/herdr-api.schema.json";
-const ajv = new Ajv2020({ allErrors: true, strict: false, validateFormats: false });
-ajv.addSchema({ ...herdrApiSchema, $id: schemaId });
-const requestParser = ajv.compile<Request>({ $ref: `${schemaId}#/schemas/request` });
-const graphicsStreamRequestParser = ajv.compile<HerdrGraphicsStreamRequest>({
-  type: "object",
-  required: ["id", "method", "params"],
-  properties: {
-    id: { type: "string" },
-    method: { const: "pane.graphics.stream" },
-    params: {
-      type: "object",
-      required: ["pane_id"],
-      properties: {
-        pane_id: { type: "string" },
-        layer_id: { type: ["string", "null"] },
-        z_index: { type: "integer" },
-      },
-    },
-  },
+const HerdrGraphicsStreamRequest = Schema.Struct({
+  id: Schema.String,
+  method: Schema.Literal("pane.graphics.stream"),
+  params: Schema.Struct({
+    pane_id: Schema.String,
+    layer_id: Schema.optionalKey(Schema.NullOr(Schema.String)),
+    z_index: Schema.optionalKey(Schema.Int),
+  }),
 });
+type HerdrGraphicsStreamRequest = typeof HerdrGraphicsStreamRequest.Type;
 
-interface HerdrGraphicsStreamRequest {
-  readonly id: string;
-  readonly method: "pane.graphics.stream";
-  readonly params: {
-    readonly pane_id: string;
-    readonly layer_id?: string | null;
-    readonly z_index?: number;
-  };
-}
+const isHerdrTestRequest = Schema.is(
+  Schema.Union([importHerdrWireSchema<Request>("request"), HerdrGraphicsStreamRequest]),
+);
 
 /** Every request accepted by the test server, including the schema-skipped graphics stream. */
 export type HerdrTestRequest = Request | HerdrGraphicsStreamRequest;
@@ -270,7 +252,7 @@ export const startHerdrTestServer = Effect.fn("startHerdrTestServer")(function* 
           const parsed: unknown = JSON.parse(
             new TextDecoder("utf-8", { fatal: true }).decode(input.subarray(0, newline)),
           );
-          if (!requestParser(parsed) && !graphicsStreamRequestParser(parsed)) {
+          if (!isHerdrTestRequest(parsed)) {
             fail();
             return;
           }
