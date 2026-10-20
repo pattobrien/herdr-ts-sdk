@@ -50,7 +50,10 @@ export type HerdrTestResponse = SuccessResponse | ErrorResponse;
 /** Raw bytes bypass response validation, including partial UTF-8 and coalesced frames. */
 export class HerdrRawTestResponse {
   /** Bytes are written unchanged; no newline is appended. */
-  constructor(readonly value: string | Uint8Array) {}
+  readonly value: string | Uint8Array;
+  constructor(value: string | Uint8Array) {
+    this.value = value;
+  }
 }
 
 /** Data observes post-request socket chunks, not graphics frames; boundaries are nondeterministic. */
