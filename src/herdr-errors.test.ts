@@ -6,6 +6,7 @@ import {
   HerdrInvalidResponse,
   HerdrRequestTimeout,
   HerdrServerError,
+  HerdrServerErrorCode,
   HerdrTransportError,
   HerdrUnsupportedProtocol,
 } from "./herdr-errors.ts";
@@ -47,4 +48,16 @@ test("typed errors own searchable stable message prefixes", () => {
 
   expect(transport.message.startsWith("Herdr transport failed")).toBe(true);
   expect(timeout.message.startsWith("Herdr request timed out")).toBe(true);
+});
+
+test("server error code keys are the PascalCase spelling of their wire codes", () => {
+  const codes = Object.values(HerdrServerErrorCode);
+  expect(Object.keys(HerdrServerErrorCode)).toEqual(
+    codes.map((code) =>
+      code
+        .split("_")
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(""),
+    ),
+  );
 });

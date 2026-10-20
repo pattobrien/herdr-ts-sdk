@@ -694,6 +694,9 @@ Expected failures remain values in the Effect error channel and are recoverable 
 | `HerdrImageTooLarge`        | A graphics payload exceeds its write-mode byte limit.                         |
 | `HerdrGraphicsStreamClosed` | A graphics writer was used after its owning scope closed.                     |
 
+`HerdrServerError.serverCode` stays an open string; compare it with the `HerdrServerErrorCode`
+catalogue, as in `error.serverCode === HerdrServerErrorCode.AgentNotFound`.
+
 `HerdrTransportRequestError` is the common request error union. `HerdrTransportMethodError<Method>`
 adds method-specific result failures. `EventOperationError` adds `HerdrUnsupportedEvent` for event
 operations; `ServerOperationError` and `WorkspaceOperationError` name their namespace request
