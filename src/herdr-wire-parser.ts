@@ -5,7 +5,7 @@
  *
  * @since 0.8.2
  */
-import { Ajv2020, type ErrorObject } from "ajv/dist/2020.js";
+import { Result, Schema, SchemaIssue, SchemaParser, SchemaRepresentation } from "effect";
 import herdrApiSchema from "../schema/herdr-api.schema.json" with { type: "json" };
 import type { ErrorResponse } from "./generated/wire-error-response.ts";
 import type { EventEnvelope } from "./generated/wire-event.ts";
@@ -26,21 +26,41 @@ export function isExpectedWireResult<Method extends WireMethod>(
   return acceptedTypes.includes(result.type);
 }
 
-const SCHEMA_ID = "https://herdr.dev/herdr-api.schema.json";
-const ajv = new Ajv2020({ allErrors: true, strict: false, validateFormats: false });
-ajv.addSchema({ ...herdrApiSchema, $id: SCHEMA_ID });
-const parseSuccessResponse = ajv.compile<SuccessResponse>({
-  $ref: `${SCHEMA_ID}#/schemas/success_response`,
-});
-const parseErrorResponse = ajv.compile<ErrorResponse>({
-  $ref: `${SCHEMA_ID}#/schemas/error_response`,
-});
-const parseLifecycleEvent = ajv.compile<EventEnvelope>({
-  $ref: `${SCHEMA_ID}#/schemas/event`,
-});
-const parseSubscriptionEvent = ajv.compile<SubscriptionEventEnvelope>({
-  $ref: `${SCHEMA_ID}#/schemas/subscription_event`,
-});
+/** Imports one root of the Herdr wire JSON Schema as an Effect Schema codec. @category decoding @since 0.9.0 */
+export function importHerdrWireSchema<Type>(
+  root: keyof typeof herdrApiSchema.schemas,
+): Schema.Codec<Type> {
+  const { $defs, ...schema } = herdrApiSchema.schemas[root];
+  const localDefinitionPrefix = `#/schemas/${root}/$defs/`;
+  const imported = SchemaRepresentation.fromJsonSchemaDocument(
+    { dialect: "draft-2020-12", schema, definitions: $defs },
+    {
+      patterns: "apply",
+      onEnter: (node) =>
+        typeof node.$ref === "string" && node.$ref.startsWith(localDefinitionPrefix)
+          ? { ...node, $ref: `#/$defs/${node.$ref.slice(localDefinitionPrefix.length)}` }
+          : node,
+    },
+  );
+  return Schema.make<Schema.Codec<Type>>(imported.ast);
+}
+
+const decodeHerdrWireResponse = SchemaParser.decodeUnknownResult(
+  Schema.suspend(() =>
+    Schema.Union([
+      importHerdrWireSchema<SuccessResponse>("success_response"),
+      importHerdrWireSchema<ErrorResponse>("error_response"),
+    ]),
+  ),
+);
+const decodeHerdrWireEvent = SchemaParser.decodeUnknownResult(
+  Schema.suspend(() =>
+    Schema.Union([
+      importHerdrWireSchema<EventEnvelope>("event"),
+      importHerdrWireSchema<SubscriptionEventEnvelope>("subscription_event"),
+    ]),
+  ),
+);
 
 /**
  * Parses an untrusted wire response into the generated success or error contract.
@@ -52,11 +72,9 @@ export function parseHerdrWireResponse(
   value: unknown,
   requestId: string,
 ): SuccessResponse | ErrorResponse {
-  if (parseSuccessResponse(value) || parseErrorResponse(value)) return value;
-  throw invalidWireValue("response", requestId, [
-    ...(parseSuccessResponse.errors ?? []),
-    ...(parseErrorResponse.errors ?? []),
-  ]);
+  const result = decodeHerdrWireResponse(value);
+  if (Result.isSuccess(result)) return result.success;
+  throw invalidWireValue("response", requestId, result.failure);
 }
 
 /**
@@ -69,18 +87,19 @@ export function parseHerdrWireEvent(
   value: unknown,
   requestId: string,
 ): EventEnvelope | SubscriptionEventEnvelope {
-  if (parseLifecycleEvent(value) || parseSubscriptionEvent(value)) return value;
-  throw invalidWireValue("event", requestId, [
-    ...(parseLifecycleEvent.errors ?? []),
-    ...(parseSubscriptionEvent.errors ?? []),
-  ]);
+  const result = decodeHerdrWireEvent(value);
+  if (Result.isSuccess(result)) return result.success;
+  throw invalidWireValue("event", requestId, result.failure);
 }
+
+/** Formats a Herdr wire schema issue for diagnostics. @category decoding @since 0.9.0 */
+export const formatHerdrWireIssue = SchemaIssue.makeFormatterDefault();
 
 function invalidWireValue(
   kind: "response" | "event",
   requestId: string,
-  errors: readonly ErrorObject[],
+  issue: SchemaIssue.Issue,
 ): Error {
-  const detail = ajv.errorsText(errors.slice(0, 5), { separator: "; " });
+  const detail = formatHerdrWireIssue(issue);
   return new Error(`Herdr wire ${kind} failed schema parsing for request ${requestId}: ${detail}`);
 }
