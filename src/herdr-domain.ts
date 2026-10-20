@@ -5,7 +5,6 @@
  *
  * @since 0.8.2
  */
-import { isAbsolute } from "node:path";
 import { Schema } from "effect";
 
 const NonEmptyHerdrIdentifier = Schema.NonEmptyString;
@@ -279,7 +278,7 @@ export const parseAgentName = Schema.decodeUnknownEffect(AgentName);
  */
 export const HerdrAbsolutePath = Schema.String.check(
   Schema.makeFilter((value) =>
-    isAbsolute(value) && !value.includes("\0")
+    /^(?:[\\/]|[A-Za-z]:[\\/])/.test(value) && !value.includes("\0")
       ? undefined
       : "must be an absolute path without NUL bytes",
   ),

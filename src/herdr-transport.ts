@@ -5,9 +5,6 @@
  *
  * @since 0.8.2
  */
-import { randomUUID } from "node:crypto";
-import { createConnection, type Socket } from "node:net";
-import { NodeStream } from "@effect/platform-node-shared";
 import {
   Cache,
   Cause,
@@ -34,7 +31,7 @@ import herdrApiSchema from "../schema/herdr-api.schema.json" with { type: "json"
 import type { ResponseResult } from "./generated/wire-success-response.ts";
 import { isExpectedWireResult, parseHerdrWireResponse } from "./herdr-wire-parser.ts";
 import { encodeWireRequest, type HerdrWireParameters } from "./herdr-wire-encoder.ts";
-import { HerdrConfig, HerdrRequestDeadline, herdrConfigLayer } from "./herdr-config.ts";
+import { HerdrConfig, HerdrRequestDeadline } from "./herdr-config.ts";
 import type { HerdrAbsolutePath } from "./herdr-domain.ts";
 import {
   HerdrInvalidInput,
@@ -51,9 +48,11 @@ import {
   makeHerdrSocketLineBuffer,
   splitHerdrSocketLines,
 } from "./herdr-socket-lines.ts";
+import { type HerdrSocketConnection, HerdrSocketConnector } from "./herdr-socket.ts";
 
 const MAX_RESPONSE_LINE_BYTES = 1024 * 1024;
 const responseUtf8Decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+const requestUtf8Encoder = new TextEncoder();
 
 /** Keeps wire parameter types available from the transport import path. */
 export type { HerdrWireParameters } from "./herdr-wire-encoder.ts";
@@ -138,7 +137,7 @@ export interface HerdrTransportSuccess<Method extends WireMethod> {
 export interface HerdrTransportStream<
   Method extends "events.subscribe" | "pane.graphics.stream",
 > extends HerdrTransportSuccess<Method> {
-  /** Pulls ordered socket bytes with Node readable backpressure and scoped cleanup. */
+  /** Pulls ordered socket bytes on demand with scoped cleanup. */
   readonly readBytes: Stream.Stream<Uint8Array, HerdrTransportError>;
   /** Writes bytes through the acquired stream resource. */
   readonly write: (bytes: Uint8Array) => Effect.Effect<void, HerdrTransportError>;
@@ -214,7 +213,7 @@ const supportedWaitEventKinds = new Set<string>(herdrApiSchema.schemas.event.$de
 type TransportOperation = HerdrTransportError["operation"];
 
 /** Socket identity is generated locally and never derived from a path or wire request ID. */
-const herdrSocketConnectionIds = new WeakMap<Socket, string>();
+const herdrSocketConnectionIds = new WeakMap<HerdrSocketConnection, string>();
 
 /** Annotates diagnostics without recovering, replacing, or stringifying the original exit. */
 function annotateHerdrTransportExit<
@@ -264,6 +263,7 @@ function traceHerdrTransportPhase<
  */
 export const makeHerdrTransport = Effect.gen(function* () {
   const config = yield* HerdrConfig;
+  const connector = yield* HerdrSocketConnector;
 
   const requestWithoutCompatibility = <Method extends WireMethod>(
     operation: TransportOperation,
@@ -283,6 +283,7 @@ export const makeHerdrTransport = Effect.gen(function* () {
         "herdr.deadline_ms": Duration.toMillis(deadline),
       });
       const value = yield* exchangeWireLine(
+        connector,
         config.socketPath,
         payload,
         operation,
@@ -365,7 +366,7 @@ export const makeHerdrTransport = Effect.gen(function* () {
           "compatibility_check",
           "ping",
           pingParameters,
-          randomUUID(),
+          crypto.randomUUID(),
           config.requestTimeout,
         ).pipe(Effect.catchTag("HerdrUnsupportedEvent", Effect.die));
         if (result.protocol !== config.supportedProtocol) {
@@ -420,7 +421,7 @@ export const makeHerdrTransport = Effect.gen(function* () {
       const parsedOptions = yield* parseHerdrTransportRequestOptions(options).pipe(
         Effect.mapError((cause) => new HerdrInvalidInput("transport.requestOptions", cause)),
       );
-      const requestId = Option.getOrElse(parsedOptions.requestId, randomUUID);
+      const requestId = Option.getOrElse(parsedOptions.requestId, () => crypto.randomUUID());
       const deadline = Option.getOrElse(parsedOptions.requestTimeout, () => config.requestTimeout);
       const payload = encodeWireRequest(requestId, method, params);
       yield* Effect.annotateCurrentSpan({
@@ -431,7 +432,7 @@ export const makeHerdrTransport = Effect.gen(function* () {
       return yield* Effect.gen(function* () {
         yield* compatibilityCheck;
         const socket = yield* Effect.acquireRelease(
-          connectSocket(config.socketPath, operation, requestId),
+          connectSocket(connector, config.socketPath, operation, requestId),
           closeSocket,
           { interruptible: true },
         );
@@ -519,7 +520,7 @@ export const makeHerdrTransport = Effect.gen(function* () {
       const parsedOptions = yield* parseHerdrTransportRequestOptions(options).pipe(
         Effect.mapError((cause) => new HerdrInvalidInput("transport.requestOptions", cause)),
       );
-      const requestId = Option.getOrElse(parsedOptions.requestId, randomUUID);
+      const requestId = Option.getOrElse(parsedOptions.requestId, () => crypto.randomUUID());
       const deadline = Option.getOrElse(parsedOptions.requestTimeout, () => config.requestTimeout);
       yield* Effect.annotateCurrentSpan({
         "herdr.method": method,
@@ -623,144 +624,70 @@ export const makeHerdrTransport = Effect.gen(function* () {
 export const herdrTransportLayerWithoutDependencies: Layer.Layer<
   HerdrTransport,
   never,
-  HerdrConfig
+  HerdrConfig | HerdrSocketConnector
 > = Layer.effect(HerdrTransport, makeHerdrTransport);
 
-/**
- * Production transport Layer using the ambient Herdr configuration Layer.
- *
- * @category layers
- * @since 0.8.2
- */
-export const herdrTransportLayer = herdrTransportLayerWithoutDependencies.pipe(
-  Layer.provide(herdrConfigLayer),
-);
-
 function connectSocket(
+  connector: HerdrSocketConnector["Service"],
   socketPath: HerdrAbsolutePath,
   operation: TransportOperation,
   requestId: string,
-): Effect.Effect<Socket, HerdrTransportError> {
+): Effect.Effect<HerdrSocketConnection, HerdrTransportError, Scope.Scope> {
   return Effect.suspend(() => {
-    const connectionId = randomUUID();
+    const connectionId = crypto.randomUUID();
     return traceHerdrTransportPhase(
-      Effect.callback<Socket, HerdrTransportError>((resume) => {
-        const socket = createConnection(resolveHerdrSocketEndpoint(socketPath));
-        herdrSocketConnectionIds.set(socket, connectionId);
-        let completed = false;
-        const cleanup = (): void => {
-          socket.off("connect", onConnect);
-        };
-        const onConnect = (): void => {
-          completed = true;
-          cleanup();
-          resume(Effect.succeed(socket));
-        };
-        const onError = (cause: Error): void => {
-          // Node also emits write callback failures as events. Keep a listener across
-          // handshake/read gaps; writes report their callback error and reads inspect socket.errored.
-          if (completed) return;
-          completed = true;
-          cleanup();
-          socket.destroy();
-          resume(Effect.fail(new HerdrTransportError(operation, "connect", requestId, cause)));
-        };
-        socket.once("connect", onConnect);
-        socket.on("error", onError);
-        socket.once("close", () => socket.off("error", onError));
-        return Effect.sync(() => {
-          if (completed) return;
-          completed = true;
-          cleanup();
-          socket.destroy();
-        });
-      }),
+      connector.connect(socketPath).pipe(
+        Effect.tap((connection) =>
+          Effect.sync(() => herdrSocketConnectionIds.set(connection, connectionId)),
+        ),
+        Effect.mapError((cause) => new HerdrTransportError(operation, "connect", requestId, cause)),
+      ),
       "herdr.socket.connect",
       { attributes: { "herdr.operation": operation, "herdr.connection_id": connectionId } },
     );
   });
 }
 
-/**
- * Resolves Herdr's filesystem-shaped IPC name to Node's Windows named-pipe endpoint.
- *
- * @category configuration
- * @since 0.8.2
- */
-export function resolveHerdrSocketEndpoint(
-  socketPath: string,
-  platform: NodeJS.Platform = process.platform,
-): string {
-  if (platform !== "win32" || socketPath.startsWith("\\\\")) return socketPath;
-  return `\\\\.\\pipe\\${socketPath}`;
-}
-
-/** Measures the existing synchronous destroy operation, not a later Node close notification. */
-function closeSocket(socket: Socket): Effect.Effect<void> {
-  return traceHerdrTransportPhase(
-    Effect.sync(() => socket.destroy()),
-    "herdr.socket.close",
-    {
-      attributes: { "herdr.connection_id": herdrSocketConnectionIds.get(socket) },
-    },
-  );
+/** Measures the connector's immediate release, not a later platform close notification. */
+function closeSocket(connection: HerdrSocketConnection): Effect.Effect<void> {
+  return traceHerdrTransportPhase(connection.close, "herdr.socket.close", {
+    attributes: { "herdr.connection_id": herdrSocketConnectionIds.get(connection) },
+  });
 }
 
 function makeHerdrSocketByteStream(
-  socket: Socket,
+  connection: HerdrSocketConnection,
   initialBytes: readonly Uint8Array[],
   operation: TransportOperation,
   requestId: string,
 ): Stream.Stream<Uint8Array, HerdrTransportError> {
-  const socketBytes = Stream.unwrap(
-    Effect.suspend(() =>
-      socket.errored !== null
-        ? Effect.fail(new HerdrTransportError(operation, "read", requestId, socket.errored))
-        : Effect.succeed(
-            NodeStream.fromReadable<Uint8Array, HerdrTransportError>({
-              evaluate: () => socket,
-              onError: (cause) => new HerdrTransportError(operation, "read", requestId, cause),
-            }),
-          ),
-    ),
+  const socketBytes = connection.read.pipe(
+    Stream.mapError((cause) => new HerdrTransportError(operation, "read", requestId, cause)),
   );
-  return initialBytes.length === 0
-    ? socketBytes
-    : Stream.concat(Stream.fromIterable(initialBytes), socketBytes);
+  return (
+    initialBytes.length === 0
+      ? socketBytes
+      : Stream.concat(Stream.fromIterable(initialBytes), socketBytes)
+  ).pipe(Stream.ensuring(connection.close));
 }
 
 function writeSocketPayload(
-  socket: Socket,
+  connection: HerdrSocketConnection,
   payload: string | Uint8Array,
   operation: TransportOperation,
   requestId: string,
 ): Effect.Effect<void, HerdrTransportError> {
+  const bytes = typeof payload === "string" ? requestUtf8Encoder.encode(payload) : payload;
   return traceHerdrTransportPhase(
-    Effect.callback<void, HerdrTransportError>((resume) => {
-      let completed = false;
-      socket.write(payload, (cause) => {
-        if (completed) return;
-        completed = true;
-        if (cause === undefined || cause === null) resume(Effect.void);
-        else {
-          resume(Effect.fail(new HerdrTransportError(operation, "write", requestId, cause)));
-        }
-      });
-      return Effect.sync(() => {
-        if (completed) return;
-        completed = true;
-        socket.destroy();
-      });
-    }).pipe(
-      Effect.tap(() =>
-        Effect.annotateCurrentSpan("herdr.bytes_written", Buffer.byteLength(payload)),
-      ),
+    connection.write(bytes).pipe(
+      Effect.mapError((cause) => new HerdrTransportError(operation, "write", requestId, cause)),
+      Effect.tap(() => Effect.annotateCurrentSpan("herdr.bytes_written", bytes.byteLength)),
     ),
     "herdr.socket.write",
     {
       attributes: {
         "herdr.operation": operation,
-        "herdr.connection_id": herdrSocketConnectionIds.get(socket),
+        "herdr.connection_id": herdrSocketConnectionIds.get(connection),
       },
     },
   );
@@ -774,21 +701,14 @@ interface HerdrSocketLine {
 }
 
 function readSocketLine(
-  socket: Socket,
+  connection: HerdrSocketConnection,
   operation: TransportOperation,
   requestId: string,
 ): Effect.Effect<HerdrSocketLine, HerdrTransportError | HerdrInvalidResponse> {
   return traceHerdrTransportPhase(
     Effect.gen(function* () {
-      if (socket.errored !== null) {
-        return yield* new HerdrTransportError(operation, "read", requestId, socket.errored);
-      }
-      const socketBytes = NodeStream.fromReadable<Uint8Array, HerdrTransportError>({
-        evaluate: () => socket,
-        closeOnDone: false,
-        onError: (cause) => new HerdrTransportError(operation, "read", requestId, cause),
-      });
-      const line = yield* socketBytes.pipe(
+      const line = yield* connection.read.pipe(
+        Stream.mapError((cause) => new HerdrTransportError(operation, "read", requestId, cause)),
         Stream.mapAccumArrayEffect(makeHerdrSocketLineBuffer, (state, chunks) =>
           parseFirstHerdrSocketLine(state, chunks, requestId),
         ),
@@ -809,7 +729,7 @@ function readSocketLine(
     {
       attributes: {
         "herdr.operation": operation,
-        "herdr.connection_id": herdrSocketConnectionIds.get(socket),
+        "herdr.connection_id": herdrSocketConnectionIds.get(connection),
       },
     },
   );
@@ -861,21 +781,24 @@ function verifyProtocolCompatibility(
 }
 
 function exchangeWireLine(
+  connector: HerdrSocketConnector["Service"],
   socketPath: HerdrAbsolutePath,
   payload: string,
   operation: TransportOperation,
   requestId: string,
   deadline: HerdrRequestDeadline,
 ): Effect.Effect<unknown, HerdrTransportError | HerdrRequestTimeout | HerdrInvalidResponse> {
-  const exchange = Effect.acquireUseRelease(
-    connectSocket(socketPath, operation, requestId).pipe(Effect.interruptible),
-    (socket) =>
-      Effect.gen(function* () {
-        yield* writeSocketPayload(socket, payload, operation, requestId);
-        const response = yield* readSocketLine(socket, operation, requestId);
-        return response.value;
-      }),
-    closeSocket,
+  const exchange = Effect.scoped(
+    Effect.gen(function* () {
+      const connection = yield* Effect.acquireRelease(
+        connectSocket(connector, socketPath, operation, requestId),
+        closeSocket,
+        { interruptible: true },
+      );
+      yield* writeSocketPayload(connection, payload, operation, requestId);
+      const response = yield* readSocketLine(connection, operation, requestId);
+      return response.value;
+    }),
   );
 
   return exchange.pipe(

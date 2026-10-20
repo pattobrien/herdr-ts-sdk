@@ -15,7 +15,6 @@ import { decodeHerdrInput, decodeHerdrWire } from "./herdr-schema-boundary.ts";
 import { defineHerdrOperation } from "./herdr-effect-operation.ts";
 import {
   HerdrTransport,
-  herdrTransportLayer,
   type HerdrTransportRequestError,
   type HerdrTransportRequestOptionsEncoded,
 } from "./herdr-transport.ts";
@@ -95,13 +94,3 @@ export const notificationServiceLayerWithoutDependencies: Layer.Layer<
   never,
   HerdrTransport
 > = Layer.effect(NotificationService, makeNotificationService);
-
-/**
- * Production notification-service Layer using the ambient Herdr transport graph.
- *
- * @category layers
- * @since 0.8.2
- */
-export const notificationServiceLayer = notificationServiceLayerWithoutDependencies.pipe(
-  Layer.provide(herdrTransportLayer),
-);

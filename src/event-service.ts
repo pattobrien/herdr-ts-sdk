@@ -49,7 +49,6 @@ import {
 } from "./herdr-socket-lines.ts";
 import {
   HerdrTransport,
-  herdrTransportLayer,
   type HerdrTransportRequestError,
   type HerdrTransportRequestOptionsEncoded,
 } from "./herdr-transport.ts";
@@ -237,16 +236,6 @@ export const eventServiceLayerWithoutDependencies: Layer.Layer<
   never,
   HerdrTransport
 > = Layer.effect(EventService, makeEventService);
-
-/**
- * Production event-service Layer using the ambient Herdr transport graph.
- *
- * @category layers
- * @since 0.8.2
- */
-export const eventServiceLayer = eventServiceLayerWithoutDependencies.pipe(
-  Layer.provide(herdrTransportLayer),
-);
 
 function decodeEventLine(
   bytes: Uint8Array,

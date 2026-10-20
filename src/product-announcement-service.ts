@@ -8,7 +8,6 @@ import { defineHerdrOperation } from "./herdr-effect-operation.ts";
 import { decodeHerdrInput } from "./herdr-schema-boundary.ts";
 import {
   HerdrTransport,
-  herdrTransportLayer,
   type HerdrTransportRequestError,
   type HerdrTransportRequestOptionsEncoded,
 } from "./herdr-transport.ts";
@@ -68,6 +67,3 @@ export const productAnnouncementServiceLayerWithoutDependencies = Layer.effect(
   ProductAnnouncementService,
   makeProductAnnouncementService,
 );
-/** Production announcement-service Layer. @category layers @since 0.9.0 */
-export const productAnnouncementServiceLayer =
-  productAnnouncementServiceLayerWithoutDependencies.pipe(Layer.provide(herdrTransportLayer));

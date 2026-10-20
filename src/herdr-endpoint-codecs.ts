@@ -332,7 +332,8 @@ export function decodeEndpointMessage(
   });
 }
 
-function concatBytes(parts: readonly Uint8Array[]): Uint8Array {
+/** Joins byte chunks into one contiguous array. @category encoding @since 0.9.1 */
+export function concatBytes(parts: readonly Uint8Array[]): Uint8Array {
   const result = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
   let offset = 0;
   for (const part of parts) {

@@ -36,15 +36,8 @@ import {
   type IClientService,
   clientServiceLayerWithoutDependencies,
 } from "./client-service.ts";
-import {
-  HerdrConfig,
-  type HerdrConfigOptions,
-  type IHerdrConfig,
-  herdrConfigLayer,
-  herdrConfigLayerFromOptions,
-} from "./herdr-config.ts";
+import { HerdrConfig, type IHerdrConfig } from "./herdr-config.ts";
 import { type IHerdrIds, herdrIds } from "./herdr-domain.ts";
-import { HerdrConfigurationError } from "./herdr-errors.ts";
 import {
   EventService,
   type IEventService,
@@ -91,6 +84,7 @@ import {
   sessionServiceLayerWithoutDependencies,
 } from "./session-service.ts";
 import { TabService, type ITabService, tabServiceLayerWithoutDependencies } from "./tab-service.ts";
+import type { HerdrSocketConnector } from "./herdr-socket.ts";
 import { herdrTransportLayerWithoutDependencies } from "./herdr-transport.ts";
 import {
   WorkspaceService,
@@ -240,32 +234,20 @@ const herdrNamespaceServicesLayerWithoutDependencies = Layer.mergeAll(
   popupServiceLayerWithoutDependencies,
 );
 
-function makeHerdrSdkLayer(configLayer: Layer.Layer<HerdrConfig, HerdrConfigurationError>) {
-  const sharedDependencies = herdrTransportLayerWithoutDependencies.pipe(
-    Layer.provideMerge(configLayer),
-  );
-  const configuredNamespaces = herdrNamespaceServicesLayerWithoutDependencies.pipe(
-    Layer.provideMerge(sharedDependencies),
-  );
-  return herdrSdkLayerWithoutDependencies.pipe(Layer.provide(configuredNamespaces));
-}
-
 /**
- * Production SDK Layer sharing one ambient configuration and transport instance.
+ * SDK Layer sharing one transport instance while retaining the configuration and socket-connector requirements a runtime provides.
  *
  * @category layers
- * @since 0.8.2
+ * @since 0.9.1
  */
-export const herdrSdkLayer = makeHerdrSdkLayer(herdrConfigLayer);
-
-/**
- * Creates a production SDK Layer with explicit options ahead of ambient configuration.
- *
- * @category layers
- * @since 0.8.2
- */
-export function herdrSdkLayerFromOptions(
-  options: HerdrConfigOptions,
-): Layer.Layer<HerdrSdk, HerdrConfigurationError> {
-  return makeHerdrSdkLayer(herdrConfigLayerFromOptions(options));
-}
+export const herdrSdkLayerWithoutPlatform: Layer.Layer<
+  HerdrSdk,
+  never,
+  HerdrConfig | HerdrSocketConnector
+> = herdrSdkLayerWithoutDependencies.pipe(
+  Layer.provide(
+    herdrNamespaceServicesLayerWithoutDependencies.pipe(
+      Layer.provideMerge(herdrTransportLayerWithoutDependencies),
+    ),
+  ),
+);

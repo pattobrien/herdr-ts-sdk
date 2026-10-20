@@ -3,12 +3,8 @@ import { tmpdir } from "node:os";
 import { ConfigProvider, Duration, Effect, Option } from "effect";
 import { expect, test } from "vite-plus/test";
 import { runHerdrTest } from "./herdr-test-runtime.ts";
-import {
-  HerdrConfig,
-  type HerdrConfigOptions,
-  herdrConfigLayerFromOptions,
-  makeHerdrConfig,
-} from "./herdr-config.ts";
+import { HerdrConfig, type HerdrConfigOptions } from "./herdr-config.ts";
+import { herdrConfigLayerFromOptions, makeHerdrConfig } from "./herdr-node.ts";
 import { HerdrConfigurationError } from "./herdr-errors.ts";
 
 interface HerdrTestAmbientConfig {

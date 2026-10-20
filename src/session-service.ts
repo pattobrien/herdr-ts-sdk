@@ -11,7 +11,6 @@ import { decodeHerdrWire } from "./herdr-schema-boundary.ts";
 import { defineHerdrOperation } from "./herdr-effect-operation.ts";
 import {
   HerdrTransport,
-  herdrTransportLayer,
   type HerdrTransportRequestError,
   type HerdrTransportRequestOptionsEncoded,
 } from "./herdr-transport.ts";
@@ -74,13 +73,3 @@ export const sessionServiceLayerWithoutDependencies: Layer.Layer<
   never,
   HerdrTransport
 > = Layer.effect(SessionService, makeSessionService);
-
-/**
- * Production session-service Layer using the ambient Herdr transport graph.
- *
- * @category layers
- * @since 0.8.2
- */
-export const sessionServiceLayer = sessionServiceLayerWithoutDependencies.pipe(
-  Layer.provide(herdrTransportLayer),
-);

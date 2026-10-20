@@ -23,7 +23,6 @@ import { decodeHerdrInput, decodeHerdrWire } from "./herdr-schema-boundary.ts";
 import { defineHerdrOperation } from "./herdr-effect-operation.ts";
 import {
   HerdrTransport,
-  herdrTransportLayer,
   type HerdrTransportRequestError,
   type HerdrTransportRequestOptionsEncoded,
 } from "./herdr-transport.ts";
@@ -343,13 +342,3 @@ export const workspaceServiceLayerWithoutDependencies: Layer.Layer<
   never,
   HerdrTransport
 > = Layer.effect(WorkspaceService, makeWorkspaceService);
-
-/**
- * Production workspace-service Layer using the ambient Herdr transport graph.
- *
- * @category layers
- * @since 0.8.2
- */
-export const workspaceServiceLayer = workspaceServiceLayerWithoutDependencies.pipe(
-  Layer.provide(herdrTransportLayer),
-);

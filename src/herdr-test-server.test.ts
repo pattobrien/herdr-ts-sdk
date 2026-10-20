@@ -9,7 +9,7 @@ import {
   startHerdrTestServer,
   type HerdrTestFixtureError,
 } from "./herdr-test-server.ts";
-import { resolveHerdrSocketEndpoint } from "./herdr-transport.ts";
+import { resolveHerdrSocketEndpoint } from "./herdr-node.ts";
 
 const requestBytes = Buffer.from(
   `${JSON.stringify({ id: "secret-request-id", method: "pane.graphics.stream", params: { pane_id: "secret-pane-id" } })}\n`,

@@ -6,6 +6,7 @@ import { HerdrConfig, HerdrRequestDeadline, type IHerdrConfig } from "./herdr-co
 import { HerdrAbsolutePath, WorkspaceId } from "./herdr-domain.ts";
 import { startHerdrTestServer } from "./herdr-test-server.ts";
 import { herdrTransportLayerWithoutDependencies } from "./herdr-transport.ts";
+import { herdrNodeSocketConnectorLayer } from "./herdr-node.ts";
 import { WorkspaceService, workspaceServiceLayerWithoutDependencies } from "./workspace-service.ts";
 
 const workspace: WorkspaceInfo = {
@@ -155,6 +156,7 @@ function withWorkspaceService<A, E>(
   return effect.pipe(
     Effect.provide(workspaceServiceLayerWithoutDependencies),
     Effect.provide(herdrTransportLayerWithoutDependencies),
+    Effect.provide(herdrNodeSocketConnectorLayer),
     Effect.provideService(HerdrConfig, HerdrConfig.of(config)),
   );
 }

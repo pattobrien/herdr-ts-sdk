@@ -3,7 +3,6 @@
  * Acquiring the SDK does not connect an endpoint; every endpoint lifetime has an explicit owner.
  * @since 0.9.0
  */
-import { dirname, join } from "node:path";
 import {
   Context,
   Deferred,
@@ -25,12 +24,9 @@ import {
   type WorkspaceId,
   type TabId,
 } from "./herdr-domain.ts";
-import { HerdrConfig, herdrConfigLayer } from "./herdr-config.ts";
-import {
-  HerdrTransport,
-  herdrTransportLayer,
-  type HerdrTransportRequestError,
-} from "./herdr-transport.ts";
+import { HerdrConfig } from "./herdr-config.ts";
+import { HerdrSocketConnector } from "./herdr-socket.ts";
+import { HerdrTransport, type HerdrTransportRequestError } from "./herdr-transport.ts";
 import { HerdrInvalidInput } from "./herdr-errors.ts";
 import {
   CommandPaneInput,
@@ -285,6 +281,7 @@ export class ClientShellService extends Context.Service<ClientShellService, ICli
 export const makeClientShellService = Effect.gen(function* () {
   const config = yield* HerdrConfig;
   const transport = yield* HerdrTransport;
+  const connector = yield* HerdrSocketConnector;
   const acquire = (input: ClientShellConnectInputEncoded) =>
     Effect.gen(function* () {
       const parsed = yield* decodeHerdrInput(
@@ -295,8 +292,8 @@ export const makeClientShellService = Effect.gen(function* () {
       yield* transport.request("ping", {});
       const timeoutMs = parsed.timeoutMs ?? 10_000;
       const maximumBytes = parsed.maximumMessageBytes ?? 32 * 1024 * 1024;
-      const wire = yield* acquireEndpointConnection({
-        socketPath: parsed.socketPath ?? join(dirname(config.socketPath), "herdr-client.sock"),
+      const wire = yield* acquireEndpointConnection(connector, {
+        socketPath: parsed.socketPath ?? config.socketPath.replace(/[^\\/]*$/, "herdr-client.sock"),
         timeoutMs,
         maximumBytes,
         // Start inactive so activation always establishes an acknowledged revision floor.
@@ -782,9 +779,4 @@ export const makeClientShellService = Effect.gen(function* () {
 export const clientShellServiceLayerWithoutDependencies = Layer.effect(
   ClientShellService,
   makeClientShellService,
-);
-/** Production client-shell Layer; connections remain lazy and callback/stream owned. @category layers @since 0.9.0 */
-export const clientShellServiceLayer = clientShellServiceLayerWithoutDependencies.pipe(
-  Layer.provide(herdrTransportLayer),
-  Layer.provide(herdrConfigLayer),
 );

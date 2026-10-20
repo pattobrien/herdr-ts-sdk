@@ -16,7 +16,6 @@ import { defineHerdrOperation } from "./herdr-effect-operation.ts";
 import { decodeHerdrInput } from "./herdr-schema-boundary.ts";
 import {
   HerdrTransport,
-  herdrTransportLayer,
   type HerdrTransportRequestError,
   type HerdrTransportRequestOptionsEncoded,
 } from "./herdr-transport.ts";
@@ -142,8 +141,4 @@ export const makeCommandService = Effect.gen(function* () {
 export const commandServiceLayerWithoutDependencies = Layer.effect(
   CommandService,
   makeCommandService,
-);
-/** Production custom-command service Layer. @category layers @since 0.9.0 */
-export const commandServiceLayer = commandServiceLayerWithoutDependencies.pipe(
-  Layer.provide(herdrTransportLayer),
 );

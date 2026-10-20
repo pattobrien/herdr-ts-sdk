@@ -105,7 +105,6 @@ import {
 } from "./herdr-errors.ts";
 import {
   HerdrTransport,
-  herdrTransportLayer,
   type IHerdrTransport,
   type HerdrTransportRequestError,
   type HerdrTransportRequestOptionsEncoded,
@@ -1239,16 +1238,6 @@ function decodePaneGraphicsResponseLine(
  */
 export const paneServiceLayerWithoutDependencies: Layer.Layer<PaneService, never, HerdrTransport> =
   Layer.effect(PaneService, makePaneService);
-
-/**
- * Production pane-service Layer using the ambient Herdr transport graph.
- *
- * @category layers
- * @since 0.8.2
- */
-export const paneServiceLayer = paneServiceLayerWithoutDependencies.pipe(
-  Layer.provide(herdrTransportLayer),
-);
 
 function encodePaneMoveDestination(destination: PaneMoveInput["destination"]) {
   switch (destination.type) {
