@@ -6,6 +6,7 @@ import {
   HerdrInvalidResponse,
   HerdrRequestTimeout,
   HerdrServerError,
+  HerdrServerErrorCode,
   HerdrTransportError,
   HerdrUnsupportedProtocol,
 } from "./herdr-errors.ts";
@@ -18,7 +19,7 @@ test("typed errors preserve stable tags and structured diagnostic context", () =
     new HerdrRequestTimeout("request", "request-1", 500),
     new HerdrInvalidResponse("schema_mismatch", "request-1", new Error("bad response")),
     new HerdrUnsupportedProtocol(0, 22, "request-1"),
-    new HerdrServerError("future_server_code", "future failure", "request-1"),
+    new HerdrServerError("future_server_code", "future failure", "request-1", "pane.focus"),
     new HerdrImageTooLarge("graphics_stream", 17, 16, "request-1"),
   ] as const;
 
@@ -47,4 +48,16 @@ test("typed errors own searchable stable message prefixes", () => {
 
   expect(transport.message.startsWith("Herdr transport failed")).toBe(true);
   expect(timeout.message.startsWith("Herdr request timed out")).toBe(true);
+});
+
+test("server error code keys are the PascalCase spelling of their wire codes", () => {
+  const codes = Object.values(HerdrServerErrorCode);
+  expect(Object.keys(HerdrServerErrorCode)).toEqual(
+    codes.map((code) =>
+      code
+        .split("_")
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(""),
+    ),
+  );
 });

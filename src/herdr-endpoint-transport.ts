@@ -377,7 +377,9 @@ export const acquireEndpointConnection = (
           const error = yield* parseEndpointErrorBody(response.error).pipe(
             Effect.mapError(() => new HerdrEndpointInvalidMessage("schema")),
           );
-          return yield* Effect.fail(new HerdrServerError(error.code, error.message, requestId));
+          return yield* Effect.fail(
+            new HerdrServerError(error.code, error.message, requestId, method),
+          );
         }
         if (!isExpectedWireResult(method, response.result))
           return yield* Effect.fail(

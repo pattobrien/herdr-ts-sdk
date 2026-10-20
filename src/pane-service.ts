@@ -1230,7 +1230,12 @@ function decodePaneGraphicsResponseLine(
       Effect.mapError((cause) => new HerdrInvalidResponse("schema_mismatch", requestId, cause)),
     );
     if ("error" in response) {
-      return yield* new HerdrServerError(response.error.code, response.error.message, response.id);
+      return yield* new HerdrServerError(
+        response.error.code,
+        response.error.message,
+        response.id,
+        "pane.graphics.stream",
+      );
     }
     return {
       _tag: "Acknowledgement",

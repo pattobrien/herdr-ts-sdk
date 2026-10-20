@@ -316,6 +316,7 @@ export const makeHerdrTransport = Effect.gen(function* () {
               response.error.code,
               response.error.message,
               requestId,
+              method,
             );
           }
           if (
@@ -457,6 +458,7 @@ export const makeHerdrTransport = Effect.gen(function* () {
                   response.error.code,
                   response.error.message,
                   requestId,
+                  method,
                 );
               }
               if (!isExpectedWireResult(method, response.result)) {
