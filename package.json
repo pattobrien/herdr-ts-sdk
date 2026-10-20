@@ -32,6 +32,7 @@
     "test:platform": "node scripts/sdk-verification-cli.mjs test run src/herdr-platform.test.ts",
     "test:stress": "node scripts/sdk-verification-cli.mjs test run src/herdr-stress.test.ts",
     "verify:platform-layers": "node scripts/verify-platform-layers.ts",
+    "bench:request-latency": "node scripts/sdk-request-latency.ts",
     "doctor": "node scripts/sdk-doctor.mjs",
     "verify:quick": "node scripts/sdk-verify.mjs quick",
     "verify": "node scripts/sdk-verify.mjs full",
