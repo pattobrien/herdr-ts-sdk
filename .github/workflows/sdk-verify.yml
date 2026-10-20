@@ -69,8 +69,69 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # Focused Windows coverage is intentional; this does not claim full Windows suite portability.
       - run: pnpm run test:platform
-      - name: Check tarball imports under package runtime and declarations under development TypeScript
+      - name: Check tarball socket round trip under package runtime and declarations under development TypeScript
         shell: bash
         env:
           PACKAGE_RUNTIME_NODE: ${{ steps.runtime.outputs.node }}
-        run: pnpm run check:package --runtime-node "$PACKAGE_RUNTIME_NODE"
+        run: pnpm run check:package --runtime "$PACKAGE_RUNTIME_NODE"
+
+  package-bun:
+    name: Packed Bun (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        id: bun
+        with:
+          bun-version: latest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.16.0"
+      - name: Read package manager version from package source
+        id: package-manager
+        shell: bash
+        run: node -e 'const p=require("./package.json"); if(p.devEngines.packageManager.name!=="pnpm") process.exit(1); console.log("version="+p.devEngines.packageManager.version)' >> "$GITHUB_OUTPUT"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ steps.package-manager.outputs.version }}
+          run_install: false
+      - run: pnpm install --frozen-lockfile
+      - name: Check tarball socket round trip under Bun and declarations under development TypeScript
+        shell: bash
+        env:
+          PACKAGE_RUNTIME_BUN: ${{ steps.bun.outputs.bun-path }}
+        run: pnpm run check:package --runtime "$PACKAGE_RUNTIME_BUN"
+
+  browser:
+    name: Browser platform layers (ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.16.0"
+      - name: Read package manager version from package source
+        id: package-manager
+        shell: bash
+        run: node -e 'const p=require("./package.json"); if(p.devEngines.packageManager.name!=="pnpm") process.exit(1); console.log("version="+p.devEngines.packageManager.version)' >> "$GITHUB_OUTPUT"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ steps.package-manager.outputs.version }}
+          run_install: false
+      - run: pnpm install --frozen-lockfile
+      - name: Install pinned websocat release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v1.14.1 --repo vi/websocat --pattern websocat.x86_64-unknown-linux-musl --dir "$RUNNER_TEMP/websocat"
+          echo "66f8dd3a0394761556339117f8bb5123bddefd44e087af2a72ec22b0bd08d514  $RUNNER_TEMP/websocat/websocat.x86_64-unknown-linux-musl" | sha256sum --check
+          install -D -m 755 "$RUNNER_TEMP/websocat/websocat.x86_64-unknown-linux-musl" "$RUNNER_TEMP/bin/websocat"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Verify the browser entry over a WebSocket bridge in headless Chromium
+        run: pnpm run verify:platform-layers
