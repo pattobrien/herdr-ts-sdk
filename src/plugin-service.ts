@@ -31,7 +31,6 @@ import { HerdrUnsupportedResult } from "./herdr-errors.ts";
 import { defineHerdrOperation } from "./herdr-effect-operation.ts";
 import {
   HerdrTransport,
-  herdrTransportLayer,
   type HerdrTransportRequestError,
   type HerdrTransportRequestOptionsEncoded,
 } from "./herdr-transport.ts";
@@ -437,16 +436,6 @@ export const pluginServiceLayerWithoutDependencies: Layer.Layer<
   never,
   HerdrTransport
 > = Layer.effect(PluginService, makePluginService);
-
-/**
- * Production plugin-service Layer using the ambient Herdr transport graph.
- *
- * @category layers
- * @since 0.8.2
- */
-export const pluginServiceLayer = pluginServiceLayerWithoutDependencies.pipe(
-  Layer.provide(herdrTransportLayer),
-);
 
 function encodePluginInvocationContext(
   context: PluginActionInvokeInput["context"] extends Option.Option<infer Value> ? Value : never,

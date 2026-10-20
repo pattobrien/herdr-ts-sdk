@@ -9,6 +9,7 @@ import packageJson from "../package.json" with { type: "json" };
 import { HerdrConfig, HerdrProtocolVersion, HerdrRequestDeadline } from "./herdr-config.ts";
 import { parseHerdrAbsolutePath } from "./herdr-domain.ts";
 import { HerdrTransport, herdrTransportLayerWithoutDependencies } from "./herdr-transport.ts";
+import { herdrNodeSocketConnectorLayer } from "./herdr-node.ts";
 import { HerdrRawTestResponse, startHerdrTestServer } from "./herdr-test-server.ts";
 import { makeHerdrSuccessResponse } from "./herdr-wire-fixtures.ts";
 
@@ -24,6 +25,7 @@ function withTracingTransport<A, E, R>(
     const supportedProtocol = yield* parseTracingProtocol(packageJson.herdr.protocol);
     return yield* effect.pipe(
       Effect.provide(herdrTransportLayerWithoutDependencies),
+      Effect.provide(herdrNodeSocketConnectorLayer),
       Effect.provideService(
         HerdrConfig,
         HerdrConfig.of({

@@ -3,10 +3,6 @@
  * Binary reads, health probes, and response routing are independent of presentation consumers.
  * @since 0.9.0
  */
-import { Buffer } from "node:buffer";
-import { randomUUID } from "node:crypto";
-import { createConnection, type Socket } from "node:net";
-import { NodeStream } from "@effect/platform-node-shared";
 import {
   Cause,
   Deferred,
@@ -35,12 +31,13 @@ import {
 import {
   decodeEndpointMessage,
   encodeEndpointControl,
+  concatBytes,
   encodeEndpointRequest,
   type EndpointServerMessage,
 } from "./herdr-endpoint-codecs.ts";
 import { encodeWireRequest, type HerdrWireParameters } from "./herdr-wire-encoder.ts";
 import { isExpectedWireResult, parseHerdrWireResponse } from "./herdr-wire-parser.ts";
-import { resolveHerdrSocketEndpoint } from "./herdr-transport.ts";
+import type { HerdrSocketConnector } from "./herdr-socket.ts";
 
 const EndpointWelcome = Schema.Struct({
   generation: Schema.Natural,
@@ -118,42 +115,22 @@ type PendingEndpointRequest = {
   byteLength: number;
 };
 
-function connectEndpointSocket(path: string): Effect.Effect<Socket, HerdrEndpointTransportError> {
-  return Effect.callback((resume) => {
-    const socket = createConnection(resolveHerdrSocketEndpoint(path));
-    let connected = false;
-    const onError = () => {
-      if (!connected) resume(Effect.fail(new HerdrEndpointTransportError("connect")));
-    };
-    socket.on("error", onError);
-    socket.once("close", () => socket.off("error", onError));
-    socket.once("connect", () => {
-      connected = true;
-      resume(Effect.succeed(socket));
-    });
-    return Effect.sync(() => {
-      if (!connected) socket.destroy();
-    });
-  });
-}
-
 /** Acquires one endpoint socket with bounded framing and complete callback cancellation cleanup. @category constructors @since 0.9.0 */
 export const acquireEndpointConnection = (
+  connector: HerdrSocketConnector["Service"],
   settings: EndpointConnectionSettings,
 ): Effect.Effect<EndpointWireConnection, HerdrEndpointFailure, Scope.Scope> =>
   Effect.gen(function* () {
     const socket = yield* Effect.acquireRelease(
-      connectEndpointSocket(settings.socketPath).pipe(
+      connector.connect(settings.socketPath).pipe(
+        Effect.mapError(() => new HerdrEndpointTransportError("connect")),
         Effect.timeoutOrElse({
           duration: settings.timeoutMs,
           orElse: () => Effect.fail(new HerdrEndpointRequestTimeout("connect")),
         }),
-        Effect.interruptible,
       ),
-      (connection) =>
-        Effect.sync(() => {
-          connection.destroy();
-        }),
+      (connection) => connection.close,
+      { interruptible: true },
     );
     const stopped = yield* Deferred.make<never, HerdrEndpointFailure>();
     const welcomeReady = yield* Deferred.make<typeof EndpointWelcome.Type, HerdrEndpointFailure>();
@@ -175,7 +152,7 @@ export const acquireEndpointConnection = (
       Effect.gen(function* () {
         if (closed) return;
         closed = true;
-        socket.destroy();
+        yield* socket.close;
         yield* Deferred.fail(stopped, error);
         yield* Deferred.fail(welcomeReady, error);
         for (const entry of pending.values()) yield* Deferred.fail(entry.result, error);
@@ -198,11 +175,8 @@ export const acquireEndpointConnection = (
           });
           if (bytes.length > settings.maximumBytes + 4)
             return yield* Effect.fail(new HerdrEndpointInvalidMessage("oversized_frame"));
-          yield* Effect.callback<void, HerdrEndpointTransportError>((resume) => {
-            socket.write(bytes, (error) =>
-              resume(error ? Effect.fail(new HerdrEndpointTransportError("write")) : Effect.void),
-            );
-          }).pipe(
+          yield* socket.write(bytes).pipe(
+            Effect.mapError(() => new HerdrEndpointTransportError("write")),
             Effect.timeoutOrElse({
               duration: settings.timeoutMs,
               orElse: () => Effect.fail(new HerdrEndpointRequestTimeout("write")),
@@ -274,7 +248,7 @@ export const acquireEndpointConnection = (
             try: () =>
               parseHerdrWireResponse(
                 JSON.parse(
-                  new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(entry.chunks)),
+                  new TextDecoder("utf-8", { fatal: true }).decode(concatBytes(entry.chunks)),
                 ),
                 message.requestId,
               ),
@@ -298,13 +272,12 @@ export const acquireEndpointConnection = (
       });
 
     let headerOffset = 0;
-    const header = Buffer.alloc(4);
-    let payload: Buffer | undefined;
+    const header = new Uint8Array(4);
+    const headerView = new DataView(header.buffer);
+    let payload: Uint8Array | undefined;
     let payloadOffset = 0;
-    const reader = NodeStream.fromReadable<Uint8Array, HerdrEndpointTransportError>({
-      evaluate: () => socket,
-      onError: () => new HerdrEndpointTransportError("read"),
-    }).pipe(
+    const reader = socket.read.pipe(
+      Stream.mapError(() => new HerdrEndpointTransportError("read")),
       Stream.runForEach((chunk) =>
         Effect.gen(function* () {
           let offset = 0;
@@ -315,10 +288,10 @@ export const acquireEndpointConnection = (
               headerOffset += count;
               offset += count;
               if (headerOffset < 4) continue;
-              const length = header.readUInt32LE();
+              const length = headerView.getUint32(0, true);
               if (length === 0 || length > settings.maximumBytes)
                 return yield* Effect.fail(new HerdrEndpointInvalidMessage("oversized_frame"));
-              payload = Buffer.alloc(length);
+              payload = new Uint8Array(length);
               payloadOffset = 0;
               headerOffset = 0;
             }
@@ -368,7 +341,7 @@ export const acquireEndpointConnection = (
         if (pending.size >= 32)
           return yield* Effect.fail(new HerdrEndpointInvalidMessage("resource_limit"));
         const requestBootId = bootId;
-        const requestId = randomUUID();
+        const requestId = crypto.randomUUID();
         const result = yield* Deferred.make<
           SuccessResponse | ErrorResponse,
           HerdrEndpointFailure

@@ -8,7 +8,8 @@ import {
   HerdrTransportError,
   HerdrUnsupportedEvent,
 } from "./herdr-errors.ts";
-import { HerdrSdk, herdrSdkLayerFromOptions } from "./herdr-sdk.ts";
+import { HerdrSdk } from "./herdr-sdk.ts";
+import { herdrSdkLayerFromOptions } from "./herdr-node.ts";
 import {
   HerdrRawTestResponse,
   startHerdrTestServer,

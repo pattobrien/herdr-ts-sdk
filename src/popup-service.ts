@@ -9,7 +9,6 @@ import { Context, Effect, Layer } from "effect";
 import { defineHerdrOperation } from "./herdr-effect-operation.ts";
 import {
   HerdrTransport,
-  herdrTransportLayer,
   type HerdrTransportRequestError,
   type HerdrTransportRequestOptionsEncoded,
 } from "./herdr-transport.ts";
@@ -63,13 +62,3 @@ export const popupServiceLayerWithoutDependencies: Layer.Layer<
   never,
   HerdrTransport
 > = Layer.effect(PopupService, makePopupService);
-
-/**
- * Production popup-service Layer using the ambient Herdr transport graph.
- *
- * @category layers
- * @since 0.8.2
- */
-export const popupServiceLayer = popupServiceLayerWithoutDependencies.pipe(
-  Layer.provide(herdrTransportLayer),
-);

@@ -7,7 +7,7 @@ import herdrApiSchema from "../schema/herdr-api.schema.json" with { type: "json"
 import type { ErrorResponse } from "./generated/wire-error-response.ts";
 import type { Request } from "./generated/wire-request.ts";
 import type { SuccessResponse } from "./generated/wire-success-response.ts";
-import { resolveHerdrSocketEndpoint } from "./herdr-transport.ts";
+import { resolveHerdrSocketEndpoint } from "./herdr-node.ts";
 
 const schemaId = "https://herdr.dev/herdr-api.schema.json";
 const ajv = new Ajv2020({ allErrors: true, strict: false, validateFormats: false });
@@ -50,7 +50,10 @@ export type HerdrTestResponse = SuccessResponse | ErrorResponse;
 /** Raw bytes bypass response validation, including partial UTF-8 and coalesced frames. */
 export class HerdrRawTestResponse {
   /** Bytes are written unchanged; no newline is appended. */
-  constructor(readonly value: string | Uint8Array) {}
+  readonly value: string | Uint8Array;
+  constructor(value: string | Uint8Array) {
+    this.value = value;
+  }
 }
 
 /** Data observes post-request socket chunks, not graphics frames; boundaries are nondeterministic. */

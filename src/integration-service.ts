@@ -11,7 +11,6 @@ import { decodeHerdrWire } from "./herdr-schema-boundary.ts";
 import { defineHerdrOperation } from "./herdr-effect-operation.ts";
 import {
   HerdrTransport,
-  herdrTransportLayer,
   type HerdrTransportRequestError,
   type HerdrTransportRequestOptionsEncoded,
 } from "./herdr-transport.ts";
@@ -130,13 +129,3 @@ export const integrationServiceLayerWithoutDependencies: Layer.Layer<
   never,
   HerdrTransport
 > = Layer.effect(IntegrationService, makeIntegrationService);
-
-/**
- * Production integration-service Layer using the ambient Herdr transport graph.
- *
- * @category layers
- * @since 0.8.2
- */
-export const integrationServiceLayer = integrationServiceLayerWithoutDependencies.pipe(
-  Layer.provide(herdrTransportLayer),
-);

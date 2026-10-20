@@ -3,7 +3,8 @@ import { wireResultTypesByMethod } from "./generated/wire-method-map.ts";
 import { expect, test } from "vite-plus/test";
 import { runHerdrTest } from "./herdr-test-runtime.ts";
 import { HerdrAbsolutePath } from "./herdr-domain.ts";
-import { HerdrSdk, herdrSdkLayerFromOptions } from "./herdr-sdk.ts";
+import { HerdrSdk } from "./herdr-sdk.ts";
+import { herdrSdkLayerFromOptions } from "./herdr-node.ts";
 import { HerdrRawTestResponse, startHerdrTestServer } from "./herdr-test-server.ts";
 import { makeHerdrSuccessResponse } from "./herdr-wire-fixtures.ts";
 

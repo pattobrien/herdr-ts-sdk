@@ -4,7 +4,7 @@ import { runHerdrTest } from "./herdr-test-runtime.ts";
 import { HerdrSdk, herdrSdkLayerFromOptions } from "./index.ts";
 import { startHerdrTestServer } from "./herdr-test-server.ts";
 import { makeHerdrSuccessResponse } from "./herdr-wire-fixtures.ts";
-import { resolveHerdrSocketEndpoint } from "./herdr-transport.ts";
+import { resolveHerdrSocketEndpoint } from "./herdr-node.ts";
 
 test("local platform socket completes public SDK success and server failure with socket cleanup", (context) =>
   runHerdrTest(

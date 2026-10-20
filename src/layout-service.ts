@@ -22,7 +22,6 @@ import { decodeHerdrInput, decodeHerdrWire } from "./herdr-schema-boundary.ts";
 import { defineHerdrOperation } from "./herdr-effect-operation.ts";
 import {
   HerdrTransport,
-  herdrTransportLayer,
   type HerdrTransportRequestError,
   type HerdrTransportRequestOptionsEncoded,
 } from "./herdr-transport.ts";
@@ -158,16 +157,6 @@ export const layoutServiceLayerWithoutDependencies: Layer.Layer<
   never,
   HerdrTransport
 > = Layer.effect(LayoutService, makeLayoutService);
-
-/**
- * Production layout-service Layer using the ambient Herdr transport graph.
- *
- * @category layers
- * @since 0.8.2
- */
-export const layoutServiceLayer = layoutServiceLayerWithoutDependencies.pipe(
-  Layer.provide(herdrTransportLayer),
-);
 
 function encodeLayoutNode(node: LayoutApplyInput["root"]):
   | {

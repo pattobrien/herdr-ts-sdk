@@ -3,7 +3,6 @@
  * Coordinates and content revisions refer to server terminal content, not a client's projection.
  * @since 0.9.0
  */
-import { Buffer } from "node:buffer";
 import { Schema } from "effect";
 import { PaneId } from "./herdr-domain.ts";
 
@@ -98,7 +97,7 @@ export const PaneCopySearchInput = Schema.Struct({
   query: Schema.String.check(
     Schema.makeFilter(
       (query) =>
-        Buffer.byteLength(query, "utf8") <= 4096 ||
+        new TextEncoder().encode(query).length <= 4096 ||
         "Pane copy search query exceeds 4096 UTF-8 bytes",
     ),
   ),

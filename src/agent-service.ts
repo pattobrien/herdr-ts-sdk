@@ -42,7 +42,6 @@ import {
 } from "./herdr-wire-encoder.ts";
 import {
   HerdrTransport,
-  herdrTransportLayer,
   type HerdrTransportRequestError,
   type HerdrTransportRequestOptionsEncoded,
 } from "./herdr-transport.ts";
@@ -342,16 +341,6 @@ export const agentServiceLayerWithoutDependencies: Layer.Layer<
   never,
   HerdrTransport
 > = Layer.effect(AgentService, makeAgentService);
-
-/**
- * Production agent-service Layer using the ambient Herdr transport graph.
- *
- * @category layers
- * @since 0.8.2
- */
-export const agentServiceLayer = agentServiceLayerWithoutDependencies.pipe(
-  Layer.provide(herdrTransportLayer),
-);
 
 function decodeAgentTarget(target: AgentTargetEncoded) {
   return decodeHerdrInput("AgentService.target", parseAgentTarget, target);

@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { NodeFileSystem, NodeStream } from "@effect/platform-node-shared";
 import { Effect, FileSystem, Queue, Schema, Scope, Stream } from "effect";
 import projectionFixture from "./fixtures/endpoint-snapshot-v1.json" with { type: "json" };
-import { resolveHerdrSocketEndpoint } from "./herdr-transport.ts";
+import { resolveHerdrSocketEndpoint } from "./herdr-node.ts";
 
 const FixtureRequest = Schema.Struct({
   id: Schema.String,

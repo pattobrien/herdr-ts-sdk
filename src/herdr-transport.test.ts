@@ -9,11 +9,8 @@ import {
   HerdrServerError,
   HerdrTransportError,
 } from "./herdr-errors.ts";
-import {
-  HerdrTransport,
-  herdrTransportLayerWithoutDependencies,
-  resolveHerdrSocketEndpoint,
-} from "./herdr-transport.ts";
+import { HerdrTransport, herdrTransportLayerWithoutDependencies } from "./herdr-transport.ts";
+import { herdrNodeSocketConnectorLayer, resolveHerdrSocketEndpoint } from "./herdr-node.ts";
 import { HerdrRawTestResponse, startHerdrTestServer } from "./herdr-test-server.ts";
 import { makeHerdrSuccessResponse } from "./herdr-wire-fixtures.ts";
 import packageJson from "../package.json" with { type: "json" };
@@ -582,6 +579,7 @@ function withTransport<A, E, R>(
     );
     return yield* effect.pipe(
       Effect.provide(herdrTransportLayerWithoutDependencies),
+      Effect.provide(herdrNodeSocketConnectorLayer),
       Effect.provideService(
         HerdrConfig,
         HerdrConfig.of({
