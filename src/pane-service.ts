@@ -115,6 +115,7 @@ const parsePanes = Schema.decodeUnknownEffect(Schema.Array(Pane));
 const parsePaneAgentReportInput = Schema.decodeEffect(PaneAgentReportInput);
 const parsePaneAgentSessionReportInput = Schema.decodeEffect(PaneAgentSessionReportInput);
 const parsePaneClearAgentAuthorityInput = Schema.decodeEffect(PaneClearAgentAuthorityInput);
+const parsePaneCommand = Schema.decodeEffect(Schema.NonEmptyString);
 const parsePaneCurrentInput = Schema.decodeEffect(PaneCurrentInput);
 const parsePaneEdgesResult = Schema.decodeUnknownEffect(PaneEdgesResult);
 const parsePaneFocusDirectionInput = Schema.decodeEffect(PaneFocusDirectionInput);
@@ -382,6 +383,12 @@ export interface IPaneService extends IPaneInteraction {
     input: PaneInputEncoded,
     options?: HerdrTransportRequestOptionsEncoded,
   ) => Effect.Effect<void, HerdrTransportRequestError>;
+  /** Types a non-empty command into one pane and submits it with Enter, like `herdr pane run`. */
+  readonly run: (
+    id: PaneId,
+    command: string,
+    options?: HerdrTransportRequestOptionsEncoded,
+  ) => Effect.Effect<void, HerdrTransportRequestError>;
   /** Reads pane output. */
   readonly read: (
     id: PaneId,
@@ -553,7 +560,7 @@ export const makePaneService = Effect.gen(function* () {
     ),
   };
 
-  return PaneService.of({
+  const service: IPaneService = PaneService.of({
     ...makePaneInteraction(transport),
     graphics,
     split: defineHerdrOperation("PaneService.split", (targetPaneId, input, options = {}) =>
@@ -824,6 +831,11 @@ export const makePaneService = Effect.gen(function* () {
         );
       }),
     ),
+    run: defineHerdrOperation("PaneService.run", (id, command, options = {}) =>
+      decodeHerdrInput("PaneService.run", parsePaneCommand, command).pipe(
+        Effect.flatMap((text) => service.sendInput(id, { text, keys: ["Enter"] }, options)),
+      ),
+    ),
     read: defineHerdrOperation("PaneService.read", (id, input, options = {}) =>
       Effect.gen(function* () {
         const parsed = yield* decodeHerdrInput("PaneService.read", parsePaneReadInput, input);
@@ -1000,6 +1012,7 @@ export const makePaneService = Effect.gen(function* () {
       transport.request("pane.close", { paneId: id }, options).pipe(Effect.asVoid),
     ),
   });
+  return service;
 });
 
 function makePaneGraphicsWriter(
