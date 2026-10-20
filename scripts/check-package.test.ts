@@ -13,7 +13,9 @@ test(
         const fs = yield* FileSystem.FileSystem;
         const before = yield* fs.readFileString("package.json");
         const result = yield* checkPackedPackage();
-        expect(result.runtimeOutput).toContain("Packed runtime import passed");
+        expect(result.runtimeOutput).toBe(
+          `Packed runtime socket round trip passed on Node ${process.version}`,
+        );
         expect(yield* fs.exists(result.temporaryDirectory)).toBe(false);
         expect(yield* fs.readFileString("package.json")).toBe(before);
       }).pipe(Effect.provide(NodeFileSystem.layer)),
@@ -28,7 +30,7 @@ test(
       context,
       Effect.gen(function* () {
         const failure = yield* checkPackedPackage({
-          runtimeNode: "herdr-package-missing-node-executable",
+          runtime: "herdr-package-missing-node-executable",
         }).pipe(Effect.flip);
         expect(String(failure)).toContain("herdr-package-missing-node-executable");
       }),
