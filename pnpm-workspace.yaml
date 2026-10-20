@@ -1,4 +1,5 @@
 allowBuilds:
+  agent-browser: false
   msgpackr-extract: false
 catalog:
   vite: npm:@voidzero-dev/vite-plus-core@0.2.6

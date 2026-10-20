@@ -5,6 +5,8 @@ import {
   traceVerificationExecution,
   verificationNodeLayer,
 } from "./sdk-verification-process.mjs";
+import { startHerdrTestServer } from "../src/herdr-test-server.ts";
+import { makeHerdrSuccessResponse } from "../src/herdr-wire-fixtures.ts";
 import { symlink } from "node:fs";
 import { createRequire } from "node:module";
 import { delimiter, dirname, join, relative, resolve, sep } from "node:path";
@@ -59,7 +61,7 @@ const findNpmEntrypoint = Effect.gen(function* () {
 });
 
 /** Builds a disposable offline tarball consumer; returned temporaryDirectory is already removed and only proves cleanup. */
-export function checkPackedPackage({ root = repositoryRoot, runtimeNode = process.execPath } = {}) {
+export function checkPackedPackage({ root = repositoryRoot, runtime = process.execPath } = {}) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const temporaryDirectory = yield* fs.makeTempDirectoryScoped({
@@ -144,10 +146,14 @@ import { NodeRuntime } from "@effect/platform-node-shared";
 import { HerdrSdk, PaneId, parsePaneId, herdrSdkLayerFromOptions } from ${JSON.stringify(manifest.name)};
 assert.equal(typeof HerdrSdk, "function");
 assert.equal(typeof herdrSdkLayerFromOptions, "function");
+const runtime = process.versions.bun === undefined ? "Node " + process.version : "Bun " + process.versions.bun;
 NodeRuntime.runMain(Effect.gen(function* () {
   assert.equal(yield* parsePaneId("pane-package-smoke"), PaneId.make("pane-package-smoke"));
-  console.log("Packed runtime import passed on " + process.version);
-}));
+  const sdk = yield* HerdrSdk;
+  assert.equal((yield* sdk.server.ping()).protocol, 22);
+  assert.deepEqual(yield* sdk.workspaces.list(), []);
+  console.log("Packed runtime socket round trip passed on " + runtime);
+}).pipe(Effect.provide(herdrSdkLayerFromOptions({ socketPath: process.argv[2] }))));
 `,
     );
     yield* fs.writeFileString(
@@ -189,10 +195,13 @@ sdk.server.ping({ requestTimeout: { invalid: true } });
         include: ["consumer.mts"],
       }),
     );
+    const server = yield* startHerdrTestServer((request) =>
+      Effect.succeed(makeHerdrSuccessResponse(request)),
+    );
     const runtimeOutput = yield* runPackageCommand(
       "package.runtime",
-      runtimeNode,
-      [join(consumer, "runtime.mjs")],
+      runtime,
+      [join(consumer, "runtime.mjs"), server.socketPath],
       consumer,
     );
     const tsc = join(dirname(require.resolve("typescript/package.json")), "bin/tsc");
@@ -208,16 +217,16 @@ sdk.server.ping({ requestTimeout: { invalid: true } });
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const args = process.argv.slice(2);
-  if (args.length !== 0 && (args.length !== 2 || args[0] !== "--runtime-node")) {
+  if (args.length !== 0 && (args.length !== 2 || args[0] !== "--runtime")) {
     console.error(
-      "Package smoke usage: node scripts/check-package.mjs [--runtime-node /path/to/node]",
+      "Package smoke usage: node scripts/check-package.mjs [--runtime /path/to/node-or-bun]",
     );
     process.exitCode = 1;
   } else {
     NodeRuntime.runMain(
       traceVerificationExecution(
         { kind: "verification", name: "package" },
-        checkPackedPackage({ runtimeNode: args[1] ?? process.execPath }).pipe(
+        checkPackedPackage({ runtime: args[1] ?? process.execPath }).pipe(
           Effect.tap((result) =>
             Effect.sync(() =>
               console.log(
