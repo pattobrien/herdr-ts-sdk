@@ -64,7 +64,7 @@ focused failure/cleanup tests and repeated synchronized scenarios, separately fr
 | `pane.rename`                   | `panes.rename`                                  | `PaneService`         | `src/pane-service.ts`         | `src/herdr-full-parity.test.ts` | covered |
 | `pane.send_text`                | `panes.sendText`                                | `PaneService`         | `src/pane-service.ts`         | `src/herdr-full-parity.test.ts` | covered |
 | `pane.send_keys`                | `panes.sendKeys`                                | `PaneService`         | `src/pane-service.ts`         | `src/herdr-full-parity.test.ts` | covered |
-| `pane.send_input`               | `panes.sendInput`                               | `PaneService`         | `src/pane-service.ts`         | `src/herdr-full-parity.test.ts` | covered |
+| `pane.send_input`               | `panes.sendInput`, `.run`                       | `PaneService`         | `src/pane-service.ts`         | `src/herdr-full-parity.test.ts` | covered |
 | `pane.read`                     | `panes.read`                                    | `PaneService`         | `src/pane-service.ts`         | `src/herdr-full-parity.test.ts` | covered |
 | `pane.wait_for_output`          | `panes.waitForOutput`                           | `PaneService`         | `src/pane-service.ts`         | `src/herdr-full-parity.test.ts` | covered |
 | `pane.report_agent`             | `panes.reportAgent`                             | `PaneService`         | `src/pane-service.ts`         | `src/herdr-full-parity.test.ts` | covered |

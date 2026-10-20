@@ -136,3 +136,60 @@ test("encoded layout targets and pane ratios are parsed before transport", (cont
       }),
     ),
   ));
+
+test("pane run submits the command with Enter as one pane.send_input request", (context) =>
+  runHerdrTest(
+    context,
+    Effect.scoped(
+      Effect.gen(function* () {
+        const server = yield* startHerdrTestServer((request) =>
+          Effect.succeed(makeHerdrSuccessResponse(request)),
+        );
+        yield* Effect.gen(function* () {
+          const herdr = yield* HerdrSdk;
+          yield* herdr.panes.run(herdr.ids.pane("pane-1"), "pnpm test -- --run");
+        }).pipe(
+          Effect.provide(
+            herdrSdkLayerFromOptions({
+              socketPath: HerdrAbsolutePath.make(server.socketPath),
+            }),
+          ),
+        );
+        expect(
+          server.requests
+            .filter((request) => request.method !== "ping")
+            .map(({ method, params }) => ({ method, params })),
+        ).toEqual([
+          {
+            method: "pane.send_input",
+            params: { pane_id: "pane-1", text: "pnpm test -- --run", keys: ["Enter"] },
+          },
+        ]);
+      }),
+    ),
+  ));
+
+test("pane run rejects an empty command before transport", (context) =>
+  runHerdrTest(
+    context,
+    Effect.scoped(
+      Effect.gen(function* () {
+        const server = yield* startHerdrTestServer((request) =>
+          Effect.succeed(makeHerdrSuccessResponse(request)),
+        );
+        const failure = yield* Effect.gen(function* () {
+          const herdr = yield* HerdrSdk;
+          return yield* herdr.panes.run(herdr.ids.pane("pane-1"), "").pipe(Effect.flip);
+        }).pipe(
+          Effect.provide(
+            herdrSdkLayerFromOptions({
+              socketPath: HerdrAbsolutePath.make(server.socketPath),
+            }),
+          ),
+        );
+        expect(failure).toBeInstanceOf(HerdrInvalidInput);
+        expect(failure).toMatchObject({ operation: "PaneService.run" });
+        expect(server.requests).toEqual([]);
+      }),
+    ),
+  ));

@@ -45,6 +45,8 @@ const graphicsFileWrite = graphicsWriter.writeFile({
   revision: 1,
 });
 herdr.agents.start({ name: herdr.ids.agentName("muse"), kind: "muse", paneId });
+const paneRun = herdr.panes.run(paneId, "pnpm test");
+const paneSendInput = herdr.panes.sendInput(paneId, { text: "pnpm test", keys: ["Enter"] });
 
 /** Compile-time proof that Stripe-style namespace calls preserve operation success. */
 export type WorkspaceCreateInference = Assert<
@@ -80,3 +82,6 @@ export type GraphicsFileAcknowledgementInference = Assert<
 export type PublicRequestOptionsAreNamed = Assert<
   Equal<NonNullable<Parameters<IHerdrSdk["workspaces"]["list"]>[0]>, PublicHerdrRequestOptions>
 >;
+
+/** Compile-time proof that pane run keeps the send-input success and failure channels. */
+export type PaneRunMatchesSendInput = Assert<Equal<typeof paneRun, typeof paneSendInput>>;

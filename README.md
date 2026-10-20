@@ -315,6 +315,7 @@ caller-supplied directory.
 | `sendText(id, text, options?)`                   | Sends literal terminal text.                                                                              |
 | `sendKeys(id, keys, options?)`                   | Sends named keys.                                                                                         |
 | `sendInput(id, input, options?)`                 | Sends text and named keys as one input operation.                                                         |
+| `run(id, command, options?)`                     | Types a non-empty command and submits it with Enter, like `herdr pane run`.                               |
 | `read(id, input, options?)`                      | Reads visible, recent, or recent-unwrapped output.                                                        |
 | `waitForOutput(id, input, options?)`             | Waits server-side for a substring or regular-expression match.                                            |
 | `reportAgent(id, input, options?)`               | Reports source-owned agent state.                                                                         |
