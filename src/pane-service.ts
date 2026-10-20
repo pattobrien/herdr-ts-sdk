@@ -5,7 +5,6 @@
  *
  * @since 0.8.2
  */
-import { Buffer } from "node:buffer";
 import {
   Clock,
   Context,
@@ -20,6 +19,7 @@ import {
   Semaphore,
   Stream,
 } from "effect";
+import { Base64 } from "effect/encoding";
 import {
   HerdrKeySequence,
   type HerdrKeySequence as HerdrKeySequenceValue,
@@ -505,7 +505,7 @@ export const makePaneService = Effect.gen(function* () {
           format: parsed.format,
           imageWidth: parsed.imageWidth,
           imageHeight: parsed.imageHeight,
-          dataBase64: Buffer.from(parsed.data).toString("base64"),
+          dataBase64: Base64.encode(parsed.data),
           layerId: Option.getOrNull(parsed.layerId),
         };
         const withPlacement =
@@ -1129,10 +1129,10 @@ function makePaneGraphicsWriter(
                 onSome: (value) => encodePaneGraphicsStreamPlacement(value).pipe(Effect.orDie),
               }),
             };
-            const bytes = Buffer.concat([
-              Buffer.from(JSON.stringify(header) + "\n"),
-              Buffer.from(parsed.data),
-            ]);
+            const headerLine = new TextEncoder().encode(JSON.stringify(header) + "\n");
+            const bytes = new Uint8Array(headerLine.length + parsed.data.length);
+            bytes.set(headerLine);
+            bytes.set(parsed.data, headerLine.length);
             yield* transport
               .writeStreamBytes(stream, bytes, writeOptions)
               .pipe(closeOnWriteFailure);
@@ -1181,7 +1181,7 @@ function makePaneGraphicsWriter(
               return yield* transport
                 .writeStreamBytes(
                   stream,
-                  Buffer.from(JSON.stringify(header) + "\n"),
+                  new TextEncoder().encode(JSON.stringify(header) + "\n"),
                   writeOptions,
                   acknowledgement,
                 )

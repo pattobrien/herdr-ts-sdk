@@ -3,26 +3,35 @@
  * Variant tags and field order follow v0.9.0 src/protocol/wire.rs; frames use a u32LE byte length.
  * @since 0.9.0
  */
-import { Buffer } from "node:buffer";
 import { Result } from "effect";
 import { HerdrEndpointInvalidMessage } from "./herdr-endpoint-errors.ts";
 import type { ClientShellKeyInput, ClientShellMouseInput } from "./herdr-client-shell-input.ts";
 
 const utf8 = new TextDecoder("utf-8", { fatal: true });
+const utf8Encoder = new TextEncoder();
 const MAX_FRAME_BYTES = 32 * 1024 * 1024;
 
 class EndpointReader {
   private offset = 0;
-  constructor(private readonly bytes: Buffer) {}
-  private take(length: number): Buffer {
+  private readonly bytes: Uint8Array;
+  private readonly view: DataView;
+  constructor(bytes: Uint8Array) {
+    this.bytes = bytes;
+    this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  }
+  private advance(length: number): number {
     if (!Number.isSafeInteger(length) || length < 0 || length > this.bytes.length - this.offset)
       throw new HerdrEndpointInvalidMessage("framing");
-    const result = this.bytes.subarray(this.offset, this.offset + length);
+    const start = this.offset;
     this.offset += length;
-    return result;
+    return start;
+  }
+  private take(length: number): Uint8Array {
+    const start = this.advance(length);
+    return this.bytes.subarray(start, start + length);
   }
   byte(): number {
-    return this.take(1).readUInt8();
+    return this.view.getUint8(this.advance(1));
   }
   bool(): boolean {
     const value = this.byte();
@@ -33,9 +42,9 @@ class EndpointReader {
     const tag = this.byte();
     if (tag > maximumTag) throw new HerdrEndpointInvalidMessage("framing");
     if (tag <= 250) return BigInt(tag);
-    if (tag === 251) return BigInt(this.take(2).readUInt16LE());
-    if (tag === 252) return BigInt(this.take(4).readUInt32LE());
-    if (tag === 253) return this.take(8).readBigUInt64LE();
+    if (tag === 251) return BigInt(this.view.getUint16(this.advance(2), true));
+    if (tag === 252) return BigInt(this.view.getUint32(this.advance(4), true));
+    if (tag === 253) return this.view.getBigUint64(this.advance(8), true);
     throw new HerdrEndpointInvalidMessage("framing");
   }
   uint(maximum = Number.MAX_SAFE_INTEGER): number {
@@ -311,7 +320,7 @@ export function decodeEndpointMessage(
 ): Result.Result<EndpointServerMessage, HerdrEndpointInvalidMessage> {
   return Result.try({
     try: () => {
-      const reader = new EndpointReader(Buffer.from(payload));
+      const reader = new EndpointReader(payload);
       const message = readServerMessage(reader);
       reader.finish();
       return message;
@@ -323,36 +332,45 @@ export function decodeEndpointMessage(
   });
 }
 
-function encodeUnsigned(value: number): Buffer {
+function concatBytes(parts: readonly Uint8Array[]): Uint8Array {
+  const result = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
+  let offset = 0;
+  for (const part of parts) {
+    result.set(part, offset);
+    offset += part.length;
+  }
+  return result;
+}
+function encodeUnsigned(value: number): Uint8Array {
   if (!Number.isSafeInteger(value) || value < 0) throw new HerdrEndpointInvalidMessage("framing");
-  if (value <= 250) return Buffer.from([value]);
+  if (value <= 250) return Uint8Array.of(value);
   if (value <= 65535) {
-    const bytes = Buffer.alloc(3);
+    const bytes = new Uint8Array(3);
     bytes[0] = 251;
-    bytes.writeUInt16LE(value, 1);
+    new DataView(bytes.buffer).setUint16(1, value, true);
     return bytes;
   }
   if (value <= 0xffff_ffff) {
-    const bytes = Buffer.alloc(5);
+    const bytes = new Uint8Array(5);
     bytes[0] = 252;
-    bytes.writeUInt32LE(value, 1);
+    new DataView(bytes.buffer).setUint32(1, value, true);
     return bytes;
   }
-  const bytes = Buffer.alloc(9);
+  const bytes = new Uint8Array(9);
   bytes[0] = 253;
-  bytes.writeBigUInt64LE(BigInt(value), 1);
+  new DataView(bytes.buffer).setBigUint64(1, BigInt(value), true);
   return bytes;
 }
-function encodeText(text: string): Buffer {
-  const bytes = Buffer.from(text, "utf8");
-  return Buffer.concat([encodeUnsigned(bytes.length), bytes]);
+function encodeText(text: string): Uint8Array {
+  const bytes = utf8Encoder.encode(text);
+  return concatBytes([encodeUnsigned(bytes.length), bytes]);
 }
 function frameEndpointPayload(parts: readonly Uint8Array[]): Uint8Array {
-  const payload = Buffer.concat(parts);
-  if (payload.length > MAX_FRAME_BYTES) throw new HerdrEndpointInvalidMessage("oversized_frame");
-  const header = Buffer.alloc(4);
-  header.writeUInt32LE(payload.length);
-  return Buffer.concat([header, payload]);
+  const payloadLength = parts.reduce((total, part) => total + part.length, 0);
+  if (payloadLength > MAX_FRAME_BYTES) throw new HerdrEndpointInvalidMessage("oversized_frame");
+  const header = new Uint8Array(4);
+  new DataView(header.buffer).setUint32(0, payloadLength, true);
+  return concatBytes([header, ...parts]);
 }
 /** Encodes a named generation-1 client control as a complete framed message. @category encoding @since 0.9.0 */
 export function encodeEndpointControl(kind: string, data: string): Uint8Array {
@@ -396,7 +414,7 @@ const endpointNamedKeys = {
   null: 17,
 } as const;
 function encodeOptional<A>(value: A | undefined, encode: (value: A) => Uint8Array): Uint8Array {
-  return value === undefined ? Buffer.from([0]) : Buffer.concat([Buffer.from([1]), encode(value)]);
+  return value === undefined ? Uint8Array.of(0) : concatBytes([Uint8Array.of(1), encode(value)]);
 }
 /** Encodes a parsed semantic key lifecycle event, including optional Windows identity. @category encoding @since 0.9.0 */
 export function encodeEndpointKey(
@@ -408,24 +426,24 @@ export function encodeEndpointKey(
     input.code.kind === "named"
       ? encodeUnsigned(endpointNamedKeys[input.code.name])
       : input.code.kind === "function"
-        ? Buffer.from([16, input.code.number])
-        : Buffer.concat([Buffer.from([15]), Buffer.from(input.code.character, "utf8")]);
+        ? Uint8Array.of(16, input.code.number)
+        : concatBytes([Uint8Array.of(15), utf8Encoder.encode(input.code.character)]);
   return frameEndpointPayload([
     encodeUnsigned(target === "pane" ? 13 : 14),
     encodeText(id),
     encodeUnsigned(1),
     encodeUnsigned(0),
     key,
-    Buffer.from([input.modifiers ?? 0]),
+    Uint8Array.of(input.modifiers ?? 0),
     encodeUnsigned(input.phase === "repeat" ? 1 : input.phase === "release" ? 2 : 0),
     encodeUnsigned(input.repeatCount ?? 1),
     encodeOptional(input.shiftedCodepoint, encodeUnsigned),
     encodeOptional(input.generatedText, encodeText),
-    Buffer.from([input.tracksRelease ? 1 : 0]),
+    Uint8Array.of(input.tracksRelease ? 1 : 0),
     encodeOptional(input.physicalKeyId, encodeUnsigned),
     encodeOptional(input.windowsRecord, (record) =>
-      Buffer.concat([
-        Buffer.from([record.keyDown ? 1 : 0]),
+      concatBytes([
+        Uint8Array.of(record.keyDown ? 1 : 0),
         encodeUnsigned(record.repeatCount),
         encodeUnsigned(record.virtualKeyCode),
         encodeUnsigned(record.virtualScanCode),
@@ -467,14 +485,14 @@ export function encodeEndpointMouse(
     encodeUnsigned(position.column),
     encodeUnsigned(position.row),
     encodeOptional(input.geometry, (geometry) =>
-      Buffer.concat([
+      concatBytes([
         encodeUnsigned(geometry.columns),
         encodeUnsigned(geometry.rows),
         encodeUnsigned(geometry.widthPixels),
         encodeUnsigned(geometry.heightPixels),
       ]),
     ),
-    Buffer.from([input.modifiers ?? 0]),
+    Uint8Array.of(input.modifiers ?? 0),
     encodeUnsigned(input.lines ?? 1),
   ]);
 }
@@ -492,7 +510,7 @@ export function encodeEndpointResize(
     encodeUnsigned(cellHeight),
     encodeUnsigned(columns),
     encodeUnsigned(rows),
-    Buffer.from([pixelMouse ? 1 : 0]),
+    Uint8Array.of(pixelMouse ? 1 : 0),
   ]);
 }
 /** Encodes client-local focus or mouse-capture preference, never a global focus command. @category encoding @since 0.9.0 */
@@ -502,6 +520,6 @@ export function encodeEndpointPreference(
 ): Uint8Array {
   return frameEndpointPayload([
     encodeUnsigned(preference === "focus" ? 18 : 19),
-    Buffer.from([enabled ? 1 : 0]),
+    Uint8Array.of(enabled ? 1 : 0),
   ]);
 }
