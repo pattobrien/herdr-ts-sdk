@@ -419,7 +419,7 @@ describe("published package", () => {
             join(fixture.packageDirectory, "package.json"),
             join(installedPackage, "package.json"),
           );
-          for (const dependency of ["effect", "ajv", "@effect", "@types"]) {
+          for (const dependency of ["effect", "@effect", "@types"]) {
             yield* fs.symlink(
               join(repositoryDirectory, "node_modules", dependency),
               join(directory, "node_modules", dependency),

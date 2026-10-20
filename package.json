@@ -49,7 +49,6 @@
   },
   "dependencies": {
     "@effect/platform-node-shared": "4.0.5",
-    "ajv": "^8.20.0",
     "effect": "4.0.5"
   },
   "devDependencies": {
