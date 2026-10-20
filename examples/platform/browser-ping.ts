@@ -24,7 +24,7 @@ const herdrLayer = herdrSdkLayerWithoutPlatform.pipe(
       application: Option.none(),
       supportedProtocol: 22,
     }),
-    herdrWebSocketConnectorLayer(url),
+    herdrWebSocketConnectorLayer({ [socketPath]: url }),
   ]),
   Layer.provide(Socket.layerWebSocketConstructorGlobal),
 );
@@ -37,11 +37,21 @@ const pingAbandonPing = Effect.gen(function* () {
     .pipe(Effect.flip);
   yield* Effect.sleep(Duration.millis(300));
   const afterAbandon = yield* herdr.server.ping();
+  const unbridged = yield* herdr.clientShell
+    .withConnection(
+      { surface: { columns: 80, rows: 24 }, cellPixels: { width: 8, height: 16 } },
+      () => Effect.void,
+    )
+    .pipe(Effect.flip);
   return {
     runtime: navigator.userAgent,
     first: first.version,
     abandoned: abandoned._tag,
     afterAbandon: afterAbandon.version,
+    unbridgedEndpoint:
+      unbridged._tag === "HerdrEndpointTransportError"
+        ? `${unbridged._tag}:${unbridged.reason}`
+        : unbridged._tag,
   };
 });
 

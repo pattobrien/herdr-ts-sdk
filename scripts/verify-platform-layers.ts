@@ -210,6 +210,7 @@ const verify = Effect.gen(function* () {
     first: "open-sockets=1",
     abandoned: "HerdrRequestTimeout",
     afterAbandon: "open-sockets=1",
+    unbridgedEndpoint: "HerdrEndpointTransportError:connect",
   };
   for (const [key, value] of Object.entries(expected)) {
     if (result[key] !== value)
