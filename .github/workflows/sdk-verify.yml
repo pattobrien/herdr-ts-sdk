@@ -76,11 +76,12 @@ jobs:
         run: pnpm run check:package --runtime "$PACKAGE_RUNTIME_NODE"
 
   package-bun:
-    name: Packed Bun (${{ matrix.os }})
+    name: Packed Bun ${{ matrix.runtime }} (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+        runtime: ["1.4.3"]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
@@ -88,7 +89,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         id: bun
         with:
-          bun-version: latest
+          bun-version: ${{ matrix.runtime }}
       - uses: actions/setup-node@v4
         with:
           node-version: "24.16.0"
