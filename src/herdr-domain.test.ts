@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Exit } from "effect";
 import { expect, test } from "vite-plus/test";
 import { runHerdrTest } from "./herdr-test-runtime.ts";
 import {
@@ -14,6 +14,32 @@ test("custom domain filters reject unsafe paths and invalid percentage syntax", 
       expect(yield* parseHerdrAbsolutePath("relative/socket").pipe(Effect.flip)).toBeDefined();
       expect(yield* parseHerdrSessionName("../escaped").pipe(Effect.flip)).toBeDefined();
       expect(yield* parseHerdrPopupSize("101%").pipe(Effect.flip)).toBeDefined();
+    }),
+  ));
+
+test("absolute paths accept POSIX, drive, and UNC roots but not a bare backslash", (context) =>
+  runHerdrTest(
+    context,
+    Effect.gen(function* () {
+      const inputs = [
+        "/tmp/herdr.sock",
+        "C:\\herdr\\herdr.sock",
+        "C:/herdr/herdr.sock",
+        "\\\\server\\share\\herdr.sock",
+        "\\herdr.sock",
+        "C:herdr.sock",
+        "relative/herdr.sock",
+      ];
+      const accepted: string[] = [];
+      for (const input of inputs) {
+        if (Exit.isSuccess(yield* Effect.exit(parseHerdrAbsolutePath(input)))) accepted.push(input);
+      }
+      expect(accepted).toEqual([
+        "/tmp/herdr.sock",
+        "C:\\herdr\\herdr.sock",
+        "C:/herdr/herdr.sock",
+        "\\\\server\\share\\herdr.sock",
+      ]);
     }),
   ));
 

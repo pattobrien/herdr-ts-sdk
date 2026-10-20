@@ -278,7 +278,7 @@ export const parseAgentName = Schema.decodeUnknownEffect(AgentName);
  */
 export const HerdrAbsolutePath = Schema.String.check(
   Schema.makeFilter((value) =>
-    /^(?:[\\/]|[A-Za-z]:[\\/])/.test(value) && !value.includes("\0")
+    /^(?:\/|\\\\|[A-Za-z]:[\\/])/.test(value) && !value.includes("\0")
       ? undefined
       : "must be an absolute path without NUL bytes",
   ),
