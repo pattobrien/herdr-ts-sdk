@@ -13,7 +13,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it, type TestContext } from "vite-plus/test";
 import { runHerdrTest } from "../src/herdr-test-runtime.ts";
-import { startHerdrTestServer } from "../src/herdr-test-server.ts";
+import { startHerdrTestServer, type HerdrTestServer } from "../src/herdr-test-server.ts";
 import { makeHerdrSuccessResponse } from "../src/herdr-wire-fixtures.ts";
 import {
   runVerificationCommand,
@@ -569,8 +569,8 @@ describe("executable examples", () => {
           Effect.gen(function* () {
             const fixture = yield* SdkToolingFixture;
             const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-            const frameSent = yield* Deferred.make<void>();
-            const server = yield* startHerdrTestServer((request) =>
+            const frameAcknowledged = yield* Deferred.make<void>();
+            const server: HerdrTestServer = yield* startHerdrTestServer((request, socket) =>
               Effect.gen(function* () {
                 const response = makeHerdrSuccessResponse(request);
                 if (response.result.type === "pane_graphics_info") {
@@ -584,9 +584,10 @@ describe("executable examples", () => {
                     },
                   };
                 }
-                if (request.method === "pane.graphics.set")
-                  yield* Deferred.succeed(frameSent, undefined);
-                return response;
+                if (request.method !== "pane.graphics.set") return response;
+                // Signalling before this write completes lets the example exit mid-write, failing the fixture.
+                yield* server.writeChunks(socket, [Buffer.from(`${JSON.stringify(response)}\n`)]);
+                yield* Deferred.succeed(frameAcknowledged, undefined);
               }),
             );
             const child = yield* spawner.spawn(
@@ -607,13 +608,13 @@ describe("executable examples", () => {
             yield* Stream.runDrain(child.stdout).pipe(Effect.forkScoped);
             const exited = yield* child.exitCode.pipe(Effect.forkScoped);
             yield* Effect.raceFirst(
-              Deferred.await(frameSent),
+              Deferred.await(frameAcknowledged),
               Effect.gen(function* () {
                 const status = yield* Fiber.join(exited);
                 const output = yield* Fiber.join(stderr);
                 return yield* Effect.die(
                   new Error(
-                    `Graphics example exited before sending its frame: ${status} ${output}`,
+                    `Graphics example exited before its frame was acknowledged: ${status} ${output}`,
                   ),
                 );
               }),
