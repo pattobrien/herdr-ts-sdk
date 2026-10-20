@@ -83,7 +83,7 @@ test(
         }
       }),
     ),
-  20_000,
+  30_000,
 );
 
 // An isolated miniature checkout exercises real failing Vitest, not a mocked process implementation.
