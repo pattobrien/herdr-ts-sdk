@@ -689,7 +689,7 @@ Expected failures remain values in the Effect error channel and are recoverable 
 | `HerdrUnsupportedProtocol`  | Server and SDK protocol versions differ.                                      |
 | `HerdrUnsupportedResult`    | An operation returned an unsupported success discriminant.                    |
 | `HerdrUnsupportedEvent`     | A stream or wait received an unsupported event discriminant.                  |
-| `HerdrServerError`          | The server rejected a request with an open-code error response.               |
+| `HerdrServerError`          | The server rejected a wire `method` with an open-code error response.         |
 | `HerdrInvalidFrame`         | Graphics data or dimensions are invalid.                                      |
 | `HerdrImageTooLarge`        | A graphics payload exceeds its write-mode byte limit.                         |
 | `HerdrGraphicsStreamClosed` | A graphics writer was used after its owning scope closed.                     |

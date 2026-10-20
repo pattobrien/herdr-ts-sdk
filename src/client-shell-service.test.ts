@@ -229,6 +229,7 @@ test("endpoint response chunks correlate independently and server rejections do 
                     expect(error).toMatchObject({
                       _tag: "HerdrServerError",
                       serverCode: "stale_release_notes",
+                      method: "release_notes.dismiss",
                     });
                   expect(yield* shell.connectionState()).toBe("ready");
                 }),

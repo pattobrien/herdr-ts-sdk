@@ -253,15 +253,17 @@ export class HerdrServerError extends Schema.TaggedError<HerdrServerError>()("He
   serverCode: Schema.String,
   serverMessage: Schema.String,
   requestId: Schema.String,
+  method: Schema.String,
   message: Schema.String,
 }) {
   /** Creates a typed boundary error while preserving the server's open code space. */
-  constructor(serverCode: string, serverMessage: string, requestId: string) {
+  constructor(serverCode: string, serverMessage: string, requestId: string, method: string) {
     super({
       serverCode,
       serverMessage,
       requestId,
-      message: `Herdr server rejected the request with ${serverCode}: ${serverMessage}`,
+      method,
+      message: `Herdr server rejected ${method} with ${serverCode}: ${serverMessage}`,
     });
   }
 }

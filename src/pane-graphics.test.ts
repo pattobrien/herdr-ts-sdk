@@ -512,6 +512,7 @@ test("graphics writers retain post-handshake server errors for the next write", 
         expect(failure).toMatchObject({
           serverCode: "invalid_graphics_frame",
           serverMessage: "bad frame",
+          method: "pane.graphics.stream",
         });
       }),
     ),

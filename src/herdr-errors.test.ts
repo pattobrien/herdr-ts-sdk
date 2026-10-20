@@ -18,7 +18,7 @@ test("typed errors preserve stable tags and structured diagnostic context", () =
     new HerdrRequestTimeout("request", "request-1", 500),
     new HerdrInvalidResponse("schema_mismatch", "request-1", new Error("bad response")),
     new HerdrUnsupportedProtocol(0, 22, "request-1"),
-    new HerdrServerError("future_server_code", "future failure", "request-1"),
+    new HerdrServerError("future_server_code", "future failure", "request-1", "pane.focus"),
     new HerdrImageTooLarge("graphics_stream", 17, 16, "request-1"),
   ] as const;
 

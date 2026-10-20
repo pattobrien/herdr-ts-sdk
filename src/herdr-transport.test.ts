@@ -69,13 +69,20 @@ test("transport classifies malformed, oversized, server, and timeout failures", 
             : { id: request.id, error: { code: "fixture_rejected", message: "no" } },
         ),
       );
-      const serverFailure = yield* withTransport(
+      const [serverFailure, streamFailure] = yield* withTransport(
         errorServer.socketPath,
         Effect.gen(function* () {
           const transport = yield* HerdrTransport;
-          return yield* transport
-            .request("server.stop", {}, { requestId: "server-error" })
-            .pipe(Effect.flip);
+          return yield* Effect.all([
+            transport.request("server.stop", {}, { requestId: "server-error" }).pipe(Effect.flip),
+            transport
+              .openStream(
+                "pane.graphics.stream",
+                { paneId: "pane-1" },
+                { requestId: "stream-error" },
+              )
+              .pipe(Effect.scoped, Effect.flip),
+          ]);
         }),
       );
       expect(serverFailure).toBeInstanceOf(HerdrServerError);
@@ -83,6 +90,14 @@ test("transport classifies malformed, oversized, server, and timeout failures", 
         serverCode: "fixture_rejected",
         serverMessage: "no",
         requestId: "server-error",
+        method: "server.stop",
+        message: "Herdr server rejected server.stop with fixture_rejected: no",
+      });
+      expect(streamFailure).toMatchObject({
+        _tag: "HerdrServerError",
+        serverCode: "fixture_rejected",
+        requestId: "stream-error",
+        method: "pane.graphics.stream",
       });
       const timeoutServer = yield* startHerdrTestServer(() => Effect.void);
       const timeout = yield* withTransport(
