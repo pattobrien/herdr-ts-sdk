@@ -13,6 +13,7 @@ export * from "./herdr-pane-interaction-models.ts";
 export type { IPaneInteraction } from "./pane-interaction.ts";
 export * from "./herdr-errors.ts";
 export * from "./herdr-socket.ts";
+export * from "./herdr-websocket.ts";
 export {
   HerdrTransport,
   HerdrTransportRequestOptions,
