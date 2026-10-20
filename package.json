@@ -54,6 +54,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
+    "agent-browser": "^0.39.1",
     "bumpp": "^11.1.0",
     "fast-check": "^4.10.2",
     "json-schema-to-typescript": "^15.0.4",
