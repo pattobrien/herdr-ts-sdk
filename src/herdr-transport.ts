@@ -1,7 +1,7 @@
 /**
  * Owns Herdr Unix-socket requests, compatibility, and stream handshakes.
  *
- * The transport correlates NDJSON responses, shares protocol compatibility checks, enforces deadlines and frame limits, translates server failures, and scopes socket cleanup.
+ * The transport correlates NDJSON responses, explains protocol mismatches after suspect failures, enforces deadlines and frame limits, translates server failures, and scopes socket cleanup.
  *
  * @since 0.8.2
  */
@@ -150,7 +150,7 @@ export interface HerdrTransportStream<
  * @since 0.8.2
  */
 export interface IHerdrTransport {
-  /** Sends one request after the shared protocol compatibility check. */
+  /** Sends one request; an `unknown_method` or invalid response becomes `HerdrUnsupportedProtocol` when a cached ping shows a protocol mismatch. */
   readonly request: {
     <Method extends HerdrOrdinaryWireMethod>(
       method: Method,
@@ -243,7 +243,6 @@ function traceHerdrTransportPhase<
 >(
   effect: Effect.Effect<A, E, R>,
   name:
-    | "herdr.compatibility.wait"
     | "herdr.compatibility.check"
     | "herdr.socket.connect"
     | "herdr.socket.write"
@@ -360,56 +359,52 @@ export const makeHerdrTransport = Effect.gen(function* () {
     }),
   });
 
-  const compatibilityCache = yield* Cache.makeWith(
-    (_key: "compatibility") =>
-      Effect.gen(function* () {
-        const { requestId, result } = yield* requestWithoutCompatibility(
+  const serverProtocolCache = yield* Cache.makeWith(
+    (_key: "server_protocol") =>
+      traceHerdrTransportPhase(
+        requestWithoutCompatibility(
           "compatibility_check",
           "ping",
           pingParameters,
           crypto.randomUUID(),
           config.requestTimeout,
-        ).pipe(Effect.catchTag("HerdrUnsupportedEvent", Effect.die));
-        if (result.protocol !== config.supportedProtocol) {
-          return yield* new HerdrUnsupportedProtocol(
-            result.protocol,
-            config.supportedProtocol,
-            requestId,
-          );
-        }
-        const checkSpan = yield* Effect.serviceOption(Tracer.ParentSpan);
-        // Cache only immutable trace identity, never the root's attributes, events, or mutable status.
-        return Option.map(checkSpan, (span) =>
-          Tracer.externalSpan({
-            traceId: span.traceId,
-            spanId: span.spanId,
-            sampled: span.sampled,
-          }),
-        );
-      }).pipe(
-        Effect.onExit(annotateHerdrTransportExit),
-        // A shared lookup belongs to all waiters, not whichever request happened to win the cache race.
-        Effect.withSpan("herdr.compatibility.check", { root: true }),
+        ).pipe(
+          Effect.catchTag("HerdrUnsupportedEvent", Effect.die),
+          Effect.map(({ result }) => result.protocol),
+        ),
+        "herdr.compatibility.check",
       ),
     {
       capacity: 1,
       timeToLive: (exit) => (Exit.isSuccess(exit) ? Duration.infinity : Duration.zero),
     },
   );
-  const compatibilityCheck = traceHerdrTransportPhase(
-    Effect.gen(function* () {
-      const checkSpan = yield* Cache.get(compatibilityCache, "compatibility");
-      const waiterSpan = yield* Effect.serviceOption(Tracer.ParentSpan);
-      if (
-        Option.isSome(checkSpan) &&
-        Option.isSome(waiterSpan) &&
-        waiterSpan.value._tag === "Span"
-      ) {
-        waiterSpan.value.addLinks([{ span: checkSpan.value, attributes: {} }]);
-      }
-    }),
-    "herdr.compatibility.wait",
-  );
+
+  const explainSuspectFailure = <
+    A,
+    E extends HerdrTransportRequestError | HerdrUnsupportedEvent,
+    R,
+  >(
+    effect: Effect.Effect<A, E, R>,
+    requestId: string,
+  ): Effect.Effect<A, E | HerdrUnsupportedProtocol, R> =>
+    effect.pipe(
+      Effect.catchIf(isProtocolMismatchSuspect, (error) =>
+        Effect.gen(function* () {
+          const serverProtocol = yield* Effect.option(
+            Cache.get(serverProtocolCache, "server_protocol"),
+          );
+          if (Option.isSome(serverProtocol) && serverProtocol.value !== config.supportedProtocol) {
+            return yield* new HerdrUnsupportedProtocol(
+              serverProtocol.value,
+              config.supportedProtocol,
+              requestId,
+            );
+          }
+          return yield* Effect.fail(error);
+        }),
+      ),
+    );
 
   const openStream = <Method extends "events.subscribe" | "pane.graphics.stream">(
     method: Method,
@@ -431,7 +426,6 @@ export const makeHerdrTransport = Effect.gen(function* () {
         "herdr.deadline_ms": Duration.toMillis(deadline),
       });
       return yield* Effect.gen(function* () {
-        yield* compatibilityCheck;
         const socket = yield* Effect.acquireRelease(
           connectSocket(connector, config.socketPath, operation, requestId),
           closeSocket,
@@ -493,6 +487,7 @@ export const makeHerdrTransport = Effect.gen(function* () {
           orElse: () =>
             Effect.fail(new HerdrRequestTimeout(operation, requestId, Duration.toMillis(deadline))),
         }),
+        (effect) => explainSuspectFailure(effect, requestId),
       );
     }, Effect.onExit(annotateHerdrTransportExit))();
   };
@@ -550,7 +545,6 @@ export const makeHerdrTransport = Effect.gen(function* () {
             "herdr.compatibility.check",
           );
         }
-        yield* compatibilityCheck;
         return yield* requestWithoutCompatibility("request", method, params, requestId, deadline);
       }).pipe(
         Effect.timeoutOrElse({
@@ -564,6 +558,7 @@ export const makeHerdrTransport = Effect.gen(function* () {
               ),
             ),
         }),
+        (effect) => (method === "ping" ? effect : explainSuspectFailure(effect, requestId)),
       );
     }, Effect.onExit(annotateHerdrTransportExit))();
   }
@@ -767,6 +762,15 @@ function isWireErrorResponse(
   response: ReturnType<typeof parseHerdrWireResponse>,
 ): response is ErrorResponse {
   return "error" in response && !("result" in response);
+}
+
+function isProtocolMismatchSuspect(
+  error: HerdrTransportRequestError | HerdrUnsupportedEvent,
+): boolean {
+  return (
+    error._tag === "HerdrInvalidResponse" ||
+    (error._tag === "HerdrServerError" && error.serverCode === "unknown_method")
+  );
 }
 
 function verifyProtocolCompatibility(

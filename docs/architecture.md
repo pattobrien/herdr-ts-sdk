@@ -32,7 +32,7 @@ transport or service boundary.
 ## Transport and resources
 
 `HerdrTransport` owns the ordinary API's Unix-socket or Windows named-pipe acquisition, request encoding,
-correlation, bounded newline framing, response parsing, compatibility memoization, deadlines,
+correlation, bounded newline framing, response parsing, lazy protocol checks after suspect failures, deadlines,
 stream handshakes, and interruption-safe cleanup. Lifecycle subscriptions are live-only from server
 acceptance; cache consumers bootstrap by buffering an accepted subscription across a session snapshot.
 
@@ -79,7 +79,7 @@ Service and transport boundaries emit native Effect spans without installing an 
 Opt-in [development tracing](local-tracing.md) supplies a scoped exporter at CLI/test execution
 roots, closes product resources before export, and propagates subprocess parents explicitly.
 The full outgoing payload is sanitized; telemetry delivery never replaces the product outcome.
-Shared compatibility checks are independent roots linked by successful waiters. Stream summaries
+A compatibility check runs only after a suspect failure and nests under that request. Stream summaries
 belong to the resource lifetime, not merely the acquisition call.
 
 ## Verification

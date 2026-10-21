@@ -78,100 +78,72 @@ test("transport deadline remains a timeout while its unfinished socket wait is i
     { signal: context.signal },
   ));
 
-test("transport exports one shared compatibility root linked from concurrent and cached waiters", (context) =>
+test("transport exports a compatibility check only under the request whose method was unknown", (context) =>
   Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
         const recorder = yield* acquireSdkTelemetryTestServer();
-        const checkStarted = yield* Deferred.make<void>();
-        const releaseCheck = yield* Deferred.make<void>();
         const server = yield* startHerdrTestServer((request) =>
-          Effect.gen(function* () {
-            if (request.method === "ping") {
-              yield* Deferred.succeed(checkStarted, undefined);
-              yield* Deferred.await(releaseCheck);
-            }
-            return makeHerdrSuccessResponse(request);
-          }),
+          Effect.succeed(
+            request.method === "ping"
+              ? { id: request.id, result: { type: "pong", version: "0.8.2", protocol: 21 } }
+              : request.method === "workspace.get"
+                ? { id: request.id, error: { code: "unknown_method", message: "private-message" } }
+                : makeHerdrSuccessResponse(request),
+          ),
         );
         const run = yield* traceSdkExecution(
           {
             enabled: true,
             endpoint: recorder.endpoint,
             kind: "test",
-            name: "transport shared compatibility",
+            name: "transport lazy compatibility",
           },
           withTracingTransport(
             server.socketPath,
             Effect.gen(function* () {
               const transport = yield* HerdrTransport;
-              const requests = yield* Effect.all(
-                [
-                  transport.request("server.stop", {}, { requestId: "private-first-request" }),
-                  transport.request("server.stop", {}, { requestId: "private-second-request" }),
-                ],
-                { concurrency: "unbounded" },
-              ).pipe(Effect.forkScoped);
-              yield* Deferred.await(checkStarted);
-              yield* Deferred.succeed(releaseCheck, undefined);
-              yield* Fiber.join(requests);
-              yield* transport.request("server.stop", {}, { requestId: "private-cached-request" });
+              yield* transport.request("server.stop", {}, { requestId: "private-ok-request" });
+              return yield* transport
+                .request(
+                  "workspace.get",
+                  { workspaceId: "workspace-1" },
+                  { requestId: "private-failing-request" },
+                )
+                .pipe(Effect.flip);
             }),
           ),
         );
-        expect(Exit.isSuccess(run.tracedExit)).toBe(true);
+        expect(run.tracedExit).toMatchObject({
+          _tag: "Success",
+          value: { _tag: "HerdrUnsupportedProtocol", actualProtocol: 21 },
+        });
         const spans = sdkTelemetryRecordedSpans(recorder.requests);
         const checks = spans.filter((span) => span.name === "herdr.compatibility.check");
-        const waits = spans.filter((span) => span.name === "herdr.compatibility.wait");
+        const failedRequests = spans.filter(
+          (span) =>
+            span.name === "HerdrTransport.request" &&
+            spanAttribute(span, "herdr.error_tag")?.stringValue === "HerdrUnsupportedProtocol",
+        );
         expect(checks).toHaveLength(1);
-        expect(waits).toHaveLength(3);
-        const check = checks[0];
-        expect(check).toBeDefined();
-        if (check === undefined) return;
-        expect(check.parentSpanId ?? "").toBe("");
-        for (const waiter of waits) {
-          expect(waiter.links).toContainEqual({
-            traceId: check.traceId,
-            spanId: check.spanId,
-            attributes: [],
-          });
-          expect(waiter.traceId).toBe(run.traceId);
-          expect(spanAttribute(waiter, "herdr.outcome")?.stringValue).toBe("success");
-        }
-        for (const name of [
-          "herdr.socket.connect",
-          "herdr.socket.write",
-          "herdr.socket.response.wait",
-          "herdr.response.decode",
-          "herdr.socket.close",
-        ]) {
-          expect(spans.filter((span) => span.name === name)).toHaveLength(4);
-        }
+        expect(failedRequests).toHaveLength(1);
+        expect(spans.filter((span) => span.name === "herdr.compatibility.wait")).toHaveLength(0);
+        expect(checks[0]?.parentSpanId).toBe(failedRequests[0]?.spanId);
+        expect(checks[0]?.traceId).toBe(run.traceId);
+        expect(checks[0] && spanAttribute(checks[0], "herdr.outcome")?.stringValue).toBe("success");
         const connections = spans
           .filter((span) => span.name === "herdr.socket.connect")
           .map((span) => spanAttribute(span, "herdr.connection_id")?.stringValue);
-        expect(new Set(connections).size).toBe(4);
-        for (const connection of connections) {
-          expect(connection).toMatch(/^[a-f0-9-]{36}$/);
-          for (const name of [
-            "herdr.socket.write",
-            "herdr.socket.response.wait",
-            "herdr.socket.close",
-          ]) {
-            expect(
-              spans.some(
-                (span) =>
-                  span.name === name &&
-                  spanAttribute(span, "herdr.connection_id")?.stringValue === connection,
-              ),
-            ).toBe(true);
-          }
-        }
+        expect(new Set(connections).size).toBe(3);
         const encoded = JSON.stringify(recorder.requests);
-        expect(encoded).not.toContain(server.socketPath);
-        expect(encoded).not.toContain("private-first-request");
-        expect(encoded).not.toContain("private-second-request");
-        expect(encoded).not.toContain("private-cached-request");
+        for (const privateValue of [
+          server.socketPath,
+          "private-ok-request",
+          "private-failing-request",
+          "private-message",
+        ]) {
+          expect(encoded).not.toContain(privateValue);
+        }
       }),
     ),
     { signal: context.signal },

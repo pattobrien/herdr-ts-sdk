@@ -48,7 +48,7 @@ Queries use `HERDR_TRACE_VIEWER_URL` or `--endpoint http://127.0.0.1:19400`. `--
 bound the displayed page; JSON is the same safe projection, not raw OTLP. Responses default to a
 2 MB raw-byte budget. For a large verification trace, explicitly add `--max-response-mb 8`
 (accepted range 1–8); output caps remain unchanged. Follow `show` hints for
-linked traces, notably the shared compatibility check. `--failed` selects explicit failed or
+linked traces. `--failed` selects explicit failed or
 interrupted execution outcomes: an expected, caught SDK error does not make its test fail.
 
 ## Interpret evidence honestly
@@ -56,10 +56,10 @@ interrupted execution outcomes: an expected, caught SDK error does not make its 
 - `sdk.execution` owns an execution's resources. Product finalizers finish before its root ends;
   exporter shutdown follows. CLI stages and subprocesses propagate the active W3C parent and run
   identity explicitly, without changing Herdr's wire protocol or mutating the parent environment.
-- Transport phases distinguish compatibility waiting from the actual shared check, socket I/O,
-  response waiting/decoding, and cleanup. Successful compatibility waiters link the shared root;
-  failed waiters currently have no link. Socket-close spans measure the existing synchronous
-  destroy call, not a later operating-system close notification.
+- Transport phases distinguish the compatibility check, socket I/O, response waiting/decoding, and
+  cleanup. The check appears only under a request that failed with `unknown_method` or an invalid
+  response. Socket-close spans measure the existing synchronous destroy call, not a later
+  operating-system close notification.
 - Graphics spans separate lock acquisition from acknowledgement waiting. Later writer calls link
   their acquisition rather than parenting themselves beneath an already-ended acquisition span.
   Subscriptions emit bounded lifetime counters and closure summaries before their span ends,

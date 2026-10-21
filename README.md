@@ -31,9 +31,11 @@ const summary = await Effect.runPromise(program.pipe(Effect.provide(herdrSdkLaye
 - Effect: `4.0.5`
 - Runtime: Node.js 20 or newer on a platform supported by Herdr's local socket server
 
-The SDK verifies protocol compatibility before ordinary requests and shares that compatibility
-result across the Layer graph. A server on another protocol fails with
-`HerdrUnsupportedProtocol`; install matching Herdr and SDK releases instead of bypassing the check.
+Ordinary requests go straight to the socket without a protocol handshake. When a request fails
+with `unknown_method` or a response the SDK cannot parse, the transport pings the server once,
+caches the reported protocol, and fails that request with `HerdrUnsupportedProtocol` if the server
+uses another protocol. `ping()` always checks the protocol. Install matching Herdr and SDK releases
+instead of bypassing the check.
 
 `@herdr/sdk` is not currently published to npm. To use it today, build and pack this repository:
 
