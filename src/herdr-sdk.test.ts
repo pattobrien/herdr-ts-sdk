@@ -16,7 +16,7 @@ const workspace: WorkspaceInfo = {
   workspace_id: "workspace-1",
 };
 
-test("root SDK exposes Stripe-style namespaces sharing one compatibility check", (context) =>
+test("root SDK exposes Stripe-style namespaces that send requests without a ping", (context) =>
   runHerdrTest(
     context,
     Effect.scoped(
@@ -67,7 +67,10 @@ test("root SDK exposes Stripe-style namespaces sharing one compatibility check",
         expect(result.socketPath).toBe(server.socketPath);
         expect(result.noSession).toBe(true);
         expect(result.sameWorkspaceService).toBe(true);
-        expect(server.requests.filter((request) => request.method === "ping")).toHaveLength(1);
+        expect(server.requests.map((request) => request.method)).toEqual([
+          "workspace.list",
+          "popup.close",
+        ]);
       }),
     ),
   ));

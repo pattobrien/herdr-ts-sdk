@@ -3,7 +3,6 @@ import { expect, test } from "vite-plus/test";
 import {
   HerdrAbsolutePath,
   HerdrGraphicsStreamClosed,
-  HerdrInvalidResponse,
   HerdrSdk,
   herdrSdkLayerFromOptions,
 } from "./index.ts";
@@ -59,8 +58,8 @@ test("sdk learning: request-wire-result", (context) =>
     }),
   ));
 
-// Controls: corrupt only the first ping; retry explicitly on the same SDK without a retry policy.
-// Hypothesis: Compatibility failure is recoverable; successful compatibility is shared across namespaces.
+// Controls: the server rejects workspace.list as unknown and reports protocol 21; only the first ping is corrupt.
+// Hypothesis: A failed lazy ping keeps the original error; the next rejection pings again and caches the mismatch.
 test("sdk learning: compatibility-recovery", (context) =>
   runHerdrTest(
     context,
@@ -68,29 +67,33 @@ test("sdk learning: compatibility-recovery", (context) =>
       let pings = 0;
       const server = yield* startHerdrTestServer((request) =>
         Effect.sync(() => {
-          if (request.method === "ping" && ++pings === 1)
-            return new HerdrRawTestResponse("{broken\n");
-          return makeHerdrSuccessResponse(request);
+          if (request.method === "ping") {
+            return ++pings === 1
+              ? new HerdrRawTestResponse("{broken\n")
+              : { id: request.id, result: { type: "pong", version: "0.8.2", protocol: 21 } };
+          }
+          return { id: request.id, error: { code: "unknown_method", message: request.method } };
         }),
       );
-      yield* runLearningSdk(
+      const failures = yield* runLearningSdk(
         server.socketPath,
         Effect.gen(function* () {
           const sdk = yield* HerdrSdk;
-          const failure = yield* sdk.workspaces.list().pipe(Effect.flip);
-          expect(failure).toBeInstanceOf(HerdrInvalidResponse);
-          expect(server.requests.map((request) => request.method)).toEqual(["ping"]);
-          yield* Effect.all([sdk.workspaces.list(), sdk.popups.close()], {
-            concurrency: "unbounded",
-          });
-          yield* sdk.workspaces.list();
+          return yield* Effect.forEach([1, 2, 3], () => sdk.workspaces.list().pipe(Effect.flip));
         }),
       );
-      expect(pings).toBe(2);
-      expect(server.requests.filter((request) => request.method === "workspace.list")).toHaveLength(
-        2,
-      );
-      expect(server.requests.filter((request) => request.method === "popup.close")).toHaveLength(1);
+      expect(failures.map((failure) => failure._tag)).toEqual([
+        "HerdrServerError",
+        "HerdrUnsupportedProtocol",
+        "HerdrUnsupportedProtocol",
+      ]);
+      expect(server.requests.map((request) => request.method)).toEqual([
+        "workspace.list",
+        "ping",
+        "workspace.list",
+        "ping",
+        "workspace.list",
+      ]);
     }),
   ));
 
@@ -128,7 +131,7 @@ test("sdk learning: scoped-subscription", (context) =>
             type: "workspace.created",
             workspace: { id: "workspace-learning" },
           });
-          yield* server.waitFor("close", 2);
+          yield* server.waitFor("close", 1);
         }),
       );
       expect(server.openSocketMethods()).not.toContain("events.subscribe");
@@ -182,7 +185,7 @@ test("sdk learning: graphics-writer", (context) =>
           );
           const closed = yield* writer.write(frame(3)).pipe(Effect.flip);
           expect(closed).toBeInstanceOf(HerdrGraphicsStreamClosed);
-          yield* server.waitFor("close", 2);
+          yield* server.waitFor("close", 1);
         }),
       );
       const bytes = Buffer.concat(chunks);

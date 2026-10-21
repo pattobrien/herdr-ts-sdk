@@ -142,7 +142,7 @@ test(
                 expect(events.map((event) => event.workspace.id)).toEqual(
                   labels.map((_, index) => `workspace-${index}`),
                 );
-                yield* server.waitFor("close", 2);
+                yield* server.waitFor("close", 1);
                 expect(server.openSocketCount()).toBe(0);
               }),
             ).pipe(Effect.timeout("3 seconds")),
@@ -210,10 +210,9 @@ test(
                         .get(herdr.ids.workspace(`workspace-${index}`))
                         .pipe(Effect.forkScoped),
                     );
-                    yield* server.waitFor("request", 5);
+                    yield* server.waitFor("request", 4);
                     yield* Effect.forEach(responseReady, Deferred.await);
-                    yield* server.waitFor("close", 1);
-                    let closedCount = 1;
+                    let closedCount = 0;
                     for (const index of releaseOrder) {
                       const gate = gates.at(index);
                       const fiber = pending.at(index);
@@ -239,7 +238,7 @@ test(
                     }
                   }),
                 ).pipe(provideStressSdk(server.socketPath));
-                yield* server.waitFor("close", 5);
+                yield* server.waitFor("close", 4);
                 expect(server.openSocketCount()).toBe(0);
               }),
             ).pipe(Effect.timeout("3 seconds")),
@@ -369,7 +368,7 @@ test(
                   }),
                 ).pipe(provideStressSdk(server.socketPath));
                 yield* Deferred.await(graphicsReadCompleted);
-                yield* server.waitFor("close", 2);
+                yield* server.waitFor("close", 1);
                 expect(server.openSocketCount()).toBe(0);
                 expect(received).toHaveLength(payloads.length);
                 const sortedReceived = received.sort((left, right) => Buffer.compare(left, right));

@@ -118,7 +118,6 @@ test("workspace service implements every workspace wire operation", (context) =>
         expect(results.listed).toHaveLength(1);
         expect(results.found.id).toBe("workspace-1");
         expect(server.requests.map((request) => request.method)).toEqual([
-          "ping",
           "workspace.create",
           "workspace.list",
           "workspace.get",
@@ -129,7 +128,7 @@ test("workspace service implements every workspace wire operation", (context) =>
           "workspace.report_metadata",
           "workspace.close",
         ]);
-        expect(server.requests[8]).toMatchObject({
+        expect(server.requests[7]).toMatchObject({
           params: {
             seq: 2,
             source: "test",
